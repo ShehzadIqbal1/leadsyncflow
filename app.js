@@ -4,6 +4,8 @@ let cors = require("cors");
 let path = require("path");
 let cookieParser = require("cookie-parser");
 
+require("dotenv").config();
+
 
 // 3️⃣ Now load rest of app
 let connectDb = require("./config/db");
@@ -18,6 +20,8 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+
+
 
 app.use(express.static(path.join(__dirname, "public")));
 

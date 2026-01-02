@@ -1,7 +1,7 @@
 let mongoose = require("mongoose");
 
 function connectDB() {
-  var uri = process.env.MONGO_URI;
+  let uri = process.env.MONGO_URI;
 
   if (!uri) {
     console.log("MONGO_URI missing in .env");

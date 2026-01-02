@@ -1,8 +1,8 @@
-var jwt = require("jsonwebtoken");
+let jwt = require("jsonwebtoken");
 
 function signAuthToken(userId) {
-  var secret = process.env.JWT_SECRET;
-  var expiresIn = process.env.JWT_EXPIRES_IN || "12h";
+  let secret = process.env.JWT_SECRET;
+  let expiresIn = process.env.JWT_EXPIRES_IN || "12h";
   return jwt.sign({ id: userId }, secret, { expiresIn: expiresIn });
 }
 

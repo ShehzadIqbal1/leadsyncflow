@@ -1,9 +1,9 @@
-var express = require("express");
-var router = express.Router();
+let express = require("express");
+let router = express.Router();
 
-var upload = require("../middlewares/upload");
-var checkEmailAvailable = require("../middlewares/checkEmailAvailable");
-var authController = require("../controllers/authController");
+let upload = require("../middlewares/upload");
+let checkEmailAvailable = require("../middlewares/checkEmailAvailable");
+let authController = require("../controllers/authController");
 
 router.post("/signup", checkEmailAvailable, authController.signup);
 
