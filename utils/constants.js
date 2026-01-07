@@ -16,13 +16,11 @@ let constants = {
 
   roles: [
     "Super Admin",
+    "Admin",
     "Manager",
-    "Lead qualifiers",
-    "Team lead(Lead qualifiers,)",
-    "data minors",
-    "Team lead(data minors )",
-    "quality assurance",
-    "Team lead(quality assurance)"
+    "Verifier",
+    "Lead Qualifiers",
+    "Data Minors"
   ],
 
   userStatus: {

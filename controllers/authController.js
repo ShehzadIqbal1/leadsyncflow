@@ -152,7 +152,7 @@ let login = asyncHandler(async function (req, res, next) {
   let data = validation.data;
 
   let user = await User.findOne({ email: data.email }).select(
-    "name email passwordHash status role systemRole department sex profileImage"
+    "name email passwordHash status role department sex profileImage"
   );
   if (!user)
     return next(httpError(statusCodes.UNAUTHORIZED, "Invalid credentials"));
@@ -182,7 +182,6 @@ let login = asyncHandler(async function (req, res, next) {
       sex: user.sex,
       department: user.department,
       role: user.role,
-      systemRole: user.systemRole,
       profileImage:
         user.profileImage && user.profileImage.url ? user.profileImage.url : "",
     },

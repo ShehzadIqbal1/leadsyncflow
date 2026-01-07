@@ -5,7 +5,7 @@ let httpError = require("../utils/httpError");
 let asyncHandler = require("./asyncHandler");
 
 module.exports = asyncHandler(async function (req, res, next) {
-  let user = await User.findById(req.user.id).select("systemRole status");
+  let user = await User.findById(req.user.id).select("role status");
   if (!user) return next(httpError(statusCodes.UNAUTHORIZED, "Not authenticated"));
 
   if (user.status !== constants.userStatus.APPROVED) {
