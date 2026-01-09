@@ -27,7 +27,7 @@ let LeadSchema = new mongoose.Schema(
     sources: { type: [SourceSchema], default: [] },
 
     // workflow
-    stage: { type: String, default: "dataMinors" },
+    stage: { type: String, default: "DataMinors" },
     status: { type: String, default: "UNPAID" },
 
     // Pakistan Standard Time (generated on submit)

@@ -173,7 +173,7 @@ let submitLead = asyncHandler(async function (req, res, next) {
     emailLocalParts: data.emailLocalParts,
     phonesNormalized: data.phonesNormalized,
     sources: data.sources,
-    stage: "DM",
+    stage: "DataMinors",
     status: "UNPAID",
     submittedDate: pktDate,
     submittedTime: pktTime,
