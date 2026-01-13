@@ -9,6 +9,7 @@ let errorHandler = require("./middlewares/errorHandler");
 let authRoutes = require("./routes/authRoutes");
 let adminRoutes = require("./routes/adminRoutes");
 let dataMinorRoutes = require("./routes/dataMinorRoutes");
+let verifierRoutes = require("./routes/verifierRoutes");
 
 let bootstrapSuperAdmin = require("./scripts/bootstrapSuperAdmin");
 
@@ -27,6 +28,8 @@ app.get("/", function (req, res) {
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/dm", dataMinorRoutes);
+app.use("/api/verifier", verifierRoutes);
+
 
 
 app.use(errorHandler);

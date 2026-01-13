@@ -8,45 +8,51 @@ let SourceSchema = new mongoose.Schema(
   { _id: false }
 );
 
+let EmailSchema = new mongoose.Schema(
+  {
+    value: { type: String, required: true, trim: true },      // raw email
+    normalized: { type: String, required: true, trim: true }, // normalized email
+    localPart: { type: String, default: "", trim: true },     // before @
+    status: {
+      type: String,
+      enum: ["PENDING", "ACTIVE", "BOUNCED", "DEAD"],
+      default: "PENDING"
+    },
+    verifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    verifiedAt: { type: Date }
+  },
+  { _id: false }
+);
+
 let LeadSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
 
-    // raw values
-    emails: { type: [String], default: [] },
+    //  emails with status
+    emails: { type: [EmailSchema], default: [] },
+
+    // phones (keep as is for now)
     phones: { type: [String], default: [] },
-
-    // optional
-    location: { type: String, trim: true, default: "" },
-
-    // normalized values
-    emailsNormalized: { type: [String], default: [] },
-    emailLocalParts: { type: [String], default: [] },
     phonesNormalized: { type: [String], default: [] },
 
+    location: { type: String, trim: true, default: "" },
     sources: { type: [SourceSchema], default: [] },
 
-    // workflow
-    stage: { type: String, default: "DataMinors" },
+    stage: { type: String, default: "DM" },
     status: { type: String, default: "UNPAID" },
 
-    // Pakistan Standard Time (generated on submit)
-    submittedDate: { type: String }, // YYYY-MM-DD
-    submittedTime: { type: String }, // HH:mm:ss PKT
+    submittedDate: { type: String },
+    submittedTime: { type: String },
 
-    createdBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true
-    }
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true }
   },
   { timestamps: true }
 );
 
-// Indexes
-LeadSchema.index({ emailsNormalized: 1 });
-LeadSchema.index({ emailLocalParts: 1 });
+// Indexes for duplicates/perf
+LeadSchema.index({ "emails.normalized": 1 });
+LeadSchema.index({ "emails.localPart": 1 });
 LeadSchema.index({ phonesNormalized: 1 });
-LeadSchema.index({ createdBy: 1, createdAt: -1 });
+LeadSchema.index({ stage: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Lead", LeadSchema);

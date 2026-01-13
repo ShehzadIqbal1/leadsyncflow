@@ -9,15 +9,32 @@ function cleanSources(sources) {
     let s = arr[i] || {};
     let name = common.safeString(s.name);
     let link = common.safeString(s.link);
+
     if (!name || !link) continue;
+
     out.push({ name: name, link: link });
   }
+
   return out;
 }
 
+/**
+ * Validates Data Minors lead payload
+ *
+ * Rules:
+ * - name required
+ * - location optional
+ * - at least 1 of (emails, phones) required
+ * - emails max 10
+ * - phones max 10
+ * - sources min 1 (ONLY ONE REQUIRED)
+ * - email format valid
+ * - phone normalized non-empty
+ * - source link valid URL
+ */
 function validateDataMinorLead(body) {
   let name = common.safeString(body && body.name);
-  let location = common.safeString(body && body.location); // ✅ optional
+  let location = common.safeString(body && body.location); // optional
   let emails = common.uniqueStrings(body && body.emails);
   let phones = common.uniqueStrings(body && body.phones);
   let sources = cleanSources(body && body.sources);
@@ -26,7 +43,7 @@ function validateDataMinorLead(body) {
     return { ok: false, message: "Name is required", fields: { name: true } };
   }
 
-  // at least one email OR phone
+  // ✅ at least one email OR phone
   if (emails.length === 0 && phones.length === 0) {
     return {
       ok: false,
@@ -35,24 +52,33 @@ function validateDataMinorLead(body) {
     };
   }
 
-  if (emails.length > 100) {
-    return { ok: false, message: "Emails max 100", fields: { emails: true } };
+  if (emails.length > 10) {
+    return { ok: false, message: "Emails max 10", fields: { emails: true } };
   }
 
   if (phones.length > 10) {
     return { ok: false, message: "Phones max 10", fields: { phones: true } };
   }
 
-  if (!sources.length) {
+  // ✅ ONLY ONE source required
+  if (!Array.isArray(sources) || sources.length < 1) {
     return {
       ok: false,
-      message: "At least 1 source link is required",
+      message: "At least one source link is required",
       fields: { sources: true }
     };
   }
 
-  // validate sources
+  // validate source URLs
   for (let i = 0; i < sources.length; i++) {
+    if (!sources[i].name) {
+      return {
+        ok: false,
+        message: "Source name is required",
+        fields: { sources: true }
+      };
+    }
+
     if (!common.isValidUrl(sources[i].link)) {
       return {
         ok: false,
@@ -62,12 +88,13 @@ function validateDataMinorLead(body) {
     }
   }
 
-  // emails
-  let emailsNorm = [];
-  let emailLocals = [];
+  // normalize & validate emails
+  let emailsNormalized = [];
+  let emailLocalParts = [];
 
   for (let i = 0; i < emails.length; i++) {
     let eNorm = normalize.normalizeEmail(emails[i]);
+
     if (!normalize.isValidEmail(eNorm)) {
       return {
         ok: false,
@@ -75,15 +102,19 @@ function validateDataMinorLead(body) {
         fields: { emails: true }
       };
     }
-    emailsNorm.push(eNorm);
+
+    emailsNormalized.push(eNorm);
+
     let local = normalize.emailLocalPart(eNorm);
-    if (local) emailLocals.push(local);
+    if (local) emailLocalParts.push(local);
   }
 
-  // phones
-  let phonesNorm = [];
+  // normalize & validate phones
+  let phonesNormalized = [];
+
   for (let i = 0; i < phones.length; i++) {
     let pNorm = normalize.normalizePhone(phones[i]);
+
     if (!pNorm) {
       return {
         ok: false,
@@ -91,7 +122,8 @@ function validateDataMinorLead(body) {
         fields: { phones: true }
       };
     }
-    phonesNorm.push(pNorm);
+
+    phonesNormalized.push(pNorm);
   }
 
   return {
@@ -102,9 +134,9 @@ function validateDataMinorLead(body) {
       emails: emails,
       phones: phones,
       sources: sources,
-      emailsNormalized: emailsNorm,
-      emailLocalParts: emailLocals,
-      phonesNormalized: phonesNorm
+      emailsNormalized: emailsNormalized,
+      emailLocalParts: emailLocalParts,
+      phonesNormalized: phonesNormalized
     }
   };
 }
