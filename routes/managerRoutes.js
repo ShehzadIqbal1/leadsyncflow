@@ -8,7 +8,7 @@ let managerController = require("../controllers/managerController");
 router.get(
   "/leads",
   requireAuth,
-  requireRole("Manager"),
+  requireRole("Manager, Super Admin", "Admin"),
   managerController.getMyAssignedLeads
 );
 

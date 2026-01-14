@@ -5,6 +5,14 @@ let requireAuth = require("../middlewares/requireAuth");
 let requireRole = require("../middlewares/requireRole");
 let lqController = require("../controllers/leadQualifierController");
 
+// LQ dropdown data: managers list
+router.get(
+  "/managers",
+  requireAuth,
+  requireRole("Lead Qualifiers", "Super Admin", "Admin"),
+  lqController.getManagersList
+);
+
 router.get(
   "/leads",
   requireAuth,
