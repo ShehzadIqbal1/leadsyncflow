@@ -15,20 +15,22 @@ router.get(
 router.post(
   "/leads/:id/decision",
   requireAuth,
-  requireRole("Manager"),
+  requireRole("Manager", "Super Admin", "Admin"),
   managerController.decisionOnLead
 );
 
 router.post(
   "/leads/:id/comment",
   requireAuth,
-  requireRole("Manager"),
+  requireRole("Manager", "Super Admin", "Admin"),
   managerController.addManagerComment
 );
 
 router.post(
   "/leads/:id/payment-status",
   requireAuth,
-  requireRole("Manager"),
+  requireRole("Manager", "Super Admin", "Admin"),
   managerController.updatePaymentStatus
 );
+
+module.exports = router;
