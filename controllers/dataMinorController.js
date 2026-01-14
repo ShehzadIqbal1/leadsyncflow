@@ -6,7 +6,7 @@ let asyncHandler = require("../middlewares/asyncHandler");
 let normalize = require("../utils/normalize");
 let leadValidator = require("../validators/leadValidator");
 
-// ✅ Updated for new Lead model:
+
 // emails are stored as subdocs: emails[].normalized, emails[].localPart
 async function findDuplicates(emailNorms, emailLocals, phoneNorms) {
   let tasks = [];
@@ -44,7 +44,7 @@ async function findDuplicates(emailNorms, emailLocals, phoneNorms) {
   };
 }
 
-// ✅ helper: build EmailSchema array from raw emails
+//  helper: build EmailSchema array from raw emails
 function buildEmailObjects(rawEmails) {
   let arr = Array.isArray(rawEmails) ? rawEmails : [];
   let out = [];
@@ -170,10 +170,10 @@ let submitLead = asyncHandler(async function (req, res, next) {
 
   let data = validation.data;
 
-  // ✅ Convert to EmailSchema objects for the new Lead model
+  //  Convert to EmailSchema objects for the new Lead model
   let emailObjects = buildEmailObjects(data.emails);
 
-  // ✅ Extract norms/localParts for duplicate checks (from objects)
+  //  Extract norms/localParts for duplicate checks (from objects)
   let emailsNorm = [];
   let emailLocals = [];
   for (let i = 0; i < emailObjects.length; i++) {
@@ -181,7 +181,7 @@ let submitLead = asyncHandler(async function (req, res, next) {
     if (emailObjects[i].localPart) emailLocals.push(emailObjects[i].localPart);
   }
 
-  // ✅ Duplicate check (updated paths)
+  //  Duplicate check (updated paths)
   let dups = await findDuplicates(emailsNorm, emailLocals, data.phonesNormalized);
 
   let hasDup =
@@ -205,7 +205,7 @@ let submitLead = asyncHandler(async function (req, res, next) {
     hour12: false
   }); // HH:mm:ss
 
-  // ✅ Stage should be consistent with your workflow
+  // Stage should be consistent with your workflow
   // You described stage: DM -> Verifier -> LQ -> Manager
   // Use "DM" here
   let lead = await Lead.create({
