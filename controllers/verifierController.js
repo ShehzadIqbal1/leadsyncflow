@@ -2,15 +2,14 @@ let Lead = require("../models/Lead");
 let statusCodes = require("../utils/statusCodes");
 let httpError = require("../utils/httpError");
 let asyncHandler = require("../middlewares/asyncHandler");
-let normalize = require("../utils/normalize"); // Kept from your code
-let assignmentService = require("../utils/assignmentService"); // Essential for Round-Robin
-
+let normalize = require("../utils/normalize"); 
+let assignmentService = require("../utils/assignmentService");
 // Helper for status validation
 function isValidEmailStatus(s) {
   return ["ACTIVE", "BOUNCED", "DEAD"].indexOf(s) !== -1;
 }
 
-// 1. GET /api/verifier/leads (KEEPING YOUR ORIGINAL LOGIC)
+// 1. GET /api/verifier/leads 
 let getDmLeads = asyncHandler(async function (req, res, next) {
   let limit = parseInt(req.query.limit || "20", 10);
   let skip = parseInt(req.query.skip || "0", 10);
@@ -31,7 +30,7 @@ let getDmLeads = asyncHandler(async function (req, res, next) {
   });
 });
 
-// 2. POST /api/verifier/leads/:leadId/update-emails (UPDATED TO BULK LOGIC)
+// 2. POST /api/verifier/leads/:leadId/update-emails
 let updateEmailStatuses = asyncHandler(async function (req, res, next) {
   let leadId = req.params.leadId;
   let emails =
@@ -78,7 +77,7 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
   });
 });
 
-// 3. POST /api/verifier/leads/:leadId/move-to-lq (NEW ROUND-ROBIN LOGIC)
+// 3. POST /api/verifier/leads/:leadId/move-to-lq 
 let moveLeadToLeadQualifiers = asyncHandler(async function (req, res, next) {
   let leadId = req.params.leadId;
 
