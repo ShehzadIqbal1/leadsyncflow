@@ -10,6 +10,8 @@ let authRoutes = require("./routes/authRoutes");
 let adminRoutes = require("./routes/adminRoutes");
 let dataMinorRoutes = require("./routes/dataMinorRoutes");
 let verifierRoutes = require("./routes/verifierRoutes");
+let leadQualifierRoutes = require("./routes/leadQualifierRoutes");
+let managerRoutes = require("./routes/managerRoutes");
 
 let bootstrapSuperAdmin = require("./scripts/bootstrapSuperAdmin");
 
@@ -29,6 +31,9 @@ app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/dm", dataMinorRoutes);
 app.use("/api/verifier", verifierRoutes);
+app.use("/api/lq", leadQualifierRoutes);
+app.use("/api/manager", managerRoutes);
+
 
 
 

@@ -2,19 +2,21 @@ let Lead = require("../models/Lead");
 let statusCodes = require("../utils/statusCodes");
 let httpError = require("../utils/httpError");
 let asyncHandler = require("../middlewares/asyncHandler");
-let normalize = require("../utils/normalize"); 
 let assignmentService = require("../utils/assignmentService");
+
 // Helper for status validation
 function isValidEmailStatus(s) {
   return ["ACTIVE", "BOUNCED", "DEAD"].indexOf(s) !== -1;
 }
 
-// 1. GET /api/verifier/leads 
+// 1. GET /api/verifier/leads
 let getDmLeads = asyncHandler(async function (req, res, next) {
   let limit = parseInt(req.query.limit || "20", 10);
   let skip = parseInt(req.query.skip || "0", 10);
+
+  if (isNaN(limit) || limit < 1) limit = 20;
   if (limit > 100) limit = 100;
-  if (skip < 0) skip = 0;
+  if (isNaN(skip) || skip < 0) skip = 0;
 
   let leads = await Lead.find({ stage: "DM" })
     .sort({ createdAt: -1 })
@@ -33,8 +35,9 @@ let getDmLeads = asyncHandler(async function (req, res, next) {
 // 2. POST /api/verifier/leads/:leadId/update-emails
 let updateEmailStatuses = asyncHandler(async function (req, res, next) {
   let leadId = req.params.leadId;
-  let emails =
-    req.body && Array.isArray(req.body.emails) ? req.body.emails : [];
+  let emails = Array.isArray(req.body && req.body.emails)
+    ? req.body.emails
+    : [];
 
   if (!emails.length) {
     return next(httpError(statusCodes.BAD_REQUEST, "emails array is required"));
@@ -43,17 +46,17 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
   let lead = await Lead.findById(leadId);
   if (!lead) return next(httpError(statusCodes.NOT_FOUND, "Lead not found"));
 
+  //  Verifier can only work on DM stage
+  if (lead.stage !== "DM") {
+    return next(httpError(statusCodes.BAD_REQUEST, "Lead is not in DM stage"));
+  }
+
   let updatedCount = 0;
 
-  // We loop through the incoming array and update the lead document
   for (let i = 0; i < emails.length; i++) {
     let incoming = emails[i] || {};
-    let norm = String(incoming.normalized || "")
-      .trim()
-      .toLowerCase();
-    let status = String(incoming.status || "")
-      .trim()
-      .toUpperCase();
+    let norm = String(incoming.normalized || "").trim().toLowerCase();
+    let status = String(incoming.status || "").trim().toUpperCase();
 
     if (!norm || !isValidEmailStatus(status)) continue;
 
@@ -77,14 +80,20 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
   });
 });
 
-// 3. POST /api/verifier/leads/:leadId/move-to-lq 
+// 3. POST /api/verifier/leads/:leadId/move-to-lq
 let moveLeadToLeadQualifiers = asyncHandler(async function (req, res, next) {
   let leadId = req.params.leadId;
 
   let lead = await Lead.findById(leadId);
   if (!lead) return next(httpError(statusCodes.NOT_FOUND, "Lead not found"));
 
-  // Check if at least one email was reviewed (not PENDING)
+  // 🔒 Prevent double move
+  if (lead.stage !== "DM") {
+    return next(
+      httpError(statusCodes.CONFLICT, "Lead already moved from DM")
+    );
+  }
+
   let hasAnyReviewed = lead.emails.some(
     (e) => e.status && e.status !== "PENDING"
   );
@@ -95,7 +104,6 @@ let moveLeadToLeadQualifiers = asyncHandler(async function (req, res, next) {
     );
   }
 
-  // Get the next user in the Round-Robin sequence
   let nextLq = await assignmentService.getNextLeadQualifier();
   if (!nextLq) {
     return next(
@@ -103,7 +111,6 @@ let moveLeadToLeadQualifiers = asyncHandler(async function (req, res, next) {
     );
   }
 
-  // Move stage and assign
   lead.stage = "LQ";
   lead.assignedTo = nextLq._id;
   lead.assignedToRole = "Lead Qualifiers";

@@ -6,8 +6,9 @@ let asyncHandler = require("../middlewares/asyncHandler");
 let normalize = require("../utils/normalize");
 let leadValidator = require("../validators/leadValidator");
 
-
-// emails are stored as subdocs: emails[].normalized, emails[].localPart
+// --------------------------------------------------
+// Duplicate finder (updated for new Lead model paths)
+// --------------------------------------------------
 async function findDuplicates(emailNorms, emailLocals, phoneNorms) {
   let tasks = [];
 
@@ -44,7 +45,9 @@ async function findDuplicates(emailNorms, emailLocals, phoneNorms) {
   };
 }
 
-//  helper: build EmailSchema array from raw emails
+// --------------------------------------------------
+// Build Email subdocuments safely
+// --------------------------------------------------
 function buildEmailObjects(rawEmails) {
   let arr = Array.isArray(rawEmails) ? rawEmails : [];
   let out = [];
@@ -69,7 +72,9 @@ function buildEmailObjects(rawEmails) {
   return out;
 }
 
-// GET /api/dm/duplicates/check?email=... OR ?phone=...
+// --------------------------------------------------
+// GET /api/dm/duplicates/check
+// --------------------------------------------------
 let liveDuplicateCheck = asyncHandler(async function (req, res, next) {
   let email = String(req.query.email || "").trim();
   let phone = String(req.query.phone || "").trim();
@@ -96,7 +101,8 @@ let liveDuplicateCheck = asyncHandler(async function (req, res, next) {
     let dupFull = await Lead.distinct("emails.normalized", {
       "emails.normalized": { $in: [eNorm] }
     });
-    if (dupFull && dupFull.length) {
+
+    if (dupFull.length) {
       out.email.exists = true;
       out.email.match = eNorm;
     }
@@ -105,7 +111,8 @@ let liveDuplicateCheck = asyncHandler(async function (req, res, next) {
       let dupLocal = await Lead.distinct("emails.localPart", {
         "emails.localPart": { $in: [local] }
       });
-      if (dupLocal && dupLocal.length) {
+
+      if (dupLocal.length) {
         out.emailLocalPart.exists = true;
         out.emailLocalPart.match = local;
       }
@@ -121,7 +128,8 @@ let liveDuplicateCheck = asyncHandler(async function (req, res, next) {
     let dupPhone = await Lead.distinct("phonesNormalized", {
       phonesNormalized: { $in: [pNorm] }
     });
-    if (dupPhone && dupPhone.length) {
+
+    if (dupPhone.length) {
       out.phone.exists = true;
       out.phone.match = pNorm;
     }
@@ -130,12 +138,12 @@ let liveDuplicateCheck = asyncHandler(async function (req, res, next) {
   return res.status(statusCodes.OK).json(out);
 });
 
+// --------------------------------------------------
 // GET /api/dm/stats
+// --------------------------------------------------
 let getMyStats = asyncHandler(async function (req, res, next) {
   let userId = req.user.id;
 
-  // For stats, server time is fine since it's just counters.
-  // If you want strict PK date boundaries, we can compute PK boundaries too.
   let now = new Date();
   let todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   let monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -152,12 +160,14 @@ let getMyStats = asyncHandler(async function (req, res, next) {
 
   return res.status(statusCodes.OK).json({
     success: true,
-    todayCount: todayCount,
-    monthCount: monthCount
+    todayCount,
+    monthCount
   });
 });
 
+// --------------------------------------------------
 // POST /api/dm/leads
+// --------------------------------------------------
 let submitLead = asyncHandler(async function (req, res, next) {
   let validation = leadValidator.validateDataMinorLead(req.body);
   if (!validation.ok) {
@@ -170,24 +180,40 @@ let submitLead = asyncHandler(async function (req, res, next) {
 
   let data = validation.data;
 
-  //  Convert to EmailSchema objects for the new Lead model
+  // Build email subdocuments
   let emailObjects = buildEmailObjects(data.emails);
 
-  //  Extract norms/localParts for duplicate checks (from objects)
-  let emailsNorm = [];
-  let emailLocals = [];
-  for (let i = 0; i < emailObjects.length; i++) {
-    emailsNorm.push(emailObjects[i].normalized);
-    if (emailObjects[i].localPart) emailLocals.push(emailObjects[i].localPart);
+  // SAFETY: at least one email OR phone must survive normalization
+  if (!emailObjects.length && !data.phonesNormalized.length) {
+    return next(
+      httpError(
+        statusCodes.BAD_REQUEST,
+        "No valid email or phone number provided"
+      )
+    );
   }
 
-  //  Duplicate check (updated paths)
-  let dups = await findDuplicates(emailsNorm, emailLocals, data.phonesNormalized);
+  // Extract for duplicate check
+  let emailsNorm = [];
+  let emailLocals = [];
+
+  for (let i = 0; i < emailObjects.length; i++) {
+    emailsNorm.push(emailObjects[i].normalized);
+    if (emailObjects[i].localPart) {
+      emailLocals.push(emailObjects[i].localPart);
+    }
+  }
+
+  let dups = await findDuplicates(
+    emailsNorm,
+    emailLocals,
+    data.phonesNormalized
+  );
 
   let hasDup =
-    (dups.duplicateEmails && dups.duplicateEmails.length) ||
-    (dups.duplicateEmailLocalParts && dups.duplicateEmailLocalParts.length) ||
-    (dups.duplicatePhones && dups.duplicatePhones.length);
+    dups.duplicateEmails.length ||
+    dups.duplicateEmailLocalParts.length ||
+    dups.duplicatePhones.length;
 
   if (hasDup) {
     return res.status(statusCodes.CONFLICT).json({
@@ -197,21 +223,20 @@ let submitLead = asyncHandler(async function (req, res, next) {
     });
   }
 
-  // 🇵🇰 Pakistan Standard Time (Asia/Karachi)
+  // 🇵🇰 Pakistan Standard Time
   let now = new Date();
-  let pktDate = now.toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" }); // YYYY-MM-DD
+  let pktDate = now.toLocaleDateString("en-CA", {
+    timeZone: "Asia/Karachi"
+  });
   let pktTime = now.toLocaleTimeString("en-GB", {
     timeZone: "Asia/Karachi",
     hour12: false
-  }); // HH:mm:ss
+  });
 
-  // Stage should be consistent with your workflow
-  // You described stage: DM -> Verifier -> LQ -> Manager
-  // Use "DM" here
   let lead = await Lead.create({
     name: data.name,
     location: data.location || "",
-    emails: emailObjects, // ✅ updated
+    emails: emailObjects,
     phones: data.phones,
     phonesNormalized: data.phonesNormalized,
     sources: data.sources,
@@ -232,7 +257,7 @@ let submitLead = asyncHandler(async function (req, res, next) {
 });
 
 module.exports = {
-  liveDuplicateCheck: liveDuplicateCheck,
-  getMyStats: getMyStats,
-  submitLead: submitLead
+  liveDuplicateCheck,
+  getMyStats,
+  submitLead
 };
