@@ -5,6 +5,14 @@ let requireAuth = require("../middlewares/requireAuth");
 let requireRole = require("../middlewares/requireRole");
 let verifierController = require("../controllers/verifierController");
 
+
+router.get(
+  "/leads",
+  requireAuth,
+  requireRole(["Verifier", "Super Admin", "Admin"]),
+  verifierController.getDmLeads
+);
+
 router.post(
   "/leads/:leadId/update-emails",
   requireAuth,
