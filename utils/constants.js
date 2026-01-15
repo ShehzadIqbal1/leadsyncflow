@@ -10,7 +10,7 @@ let constants = {
     "Sales",
     "Writing",
     "Youtube Automation",
-    "Lead Qualifers",
+    "Lead Qualifiers",
     "Medical Billing"
   ],
 

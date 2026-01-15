@@ -2,6 +2,7 @@ let Lead = require("../models/Lead");
 let User = require("../models/User");
 let statusCodes = require("../utils/statusCodes");
 let httpError = require("../utils/httpError");
+let constants = require("../utils/constants");
 let asyncHandler = require("../middlewares/asyncHandler");
 
 function isValidLqStatus(s) {
@@ -20,12 +21,9 @@ function getPktDateTime() {
 
 // GET /api/lq/managers
 let getManagersList = asyncHandler(async function (req, res, next) {
-
-  let q = safeString(req.query.q).toLowerCase();
-
   let query = {
     role: "Manager",
-    status: constants.userStatus.APPROVED
+    status: constants.userStatus.APPROVED,
   };
 
   let managers = await User.find(query)
@@ -40,13 +38,11 @@ let getManagersList = asyncHandler(async function (req, res, next) {
         name: m.name,
         email: m.email,
         department: m.department,
-        role: m.role
+        role: m.role,
       };
-    })
+    }),
   });
 });
-
-
 
 // GET /api/lq/leads?limit=20&skip=0
 let getMyLeads = asyncHandler(async function (req, res, next) {
@@ -146,36 +142,88 @@ let addComment = asyncHandler(async function (req, res, next) {
 
 // POST /api/lq/leads/:leadId/assign-manager
 // body: { managerId: "..." , commentText?: "optional comment" }
+// POST /api/lq/leads/:leadId/assign-manager
+// body: { managerId, responseType: "EMAIL|PHONE", responseValue: "...", commentText? }
 let assignToManager = asyncHandler(async function (req, res, next) {
   let leadId = req.params.leadId;
+
   let managerId = String((req.body && req.body.managerId) || "").trim();
+  let responseType = String((req.body && req.body.responseType) || "").trim().toUpperCase();
+  let responseValue = String((req.body && req.body.responseValue) || "").trim();
   let commentText = String((req.body && req.body.commentText) || "").trim();
 
-  if (!managerId)
+  if (!managerId) {
     return next(httpError(statusCodes.BAD_REQUEST, "managerId is required"));
+  }
+
+  if (["EMAIL", "PHONE"].indexOf(responseType) === -1) {
+    return next(httpError(statusCodes.BAD_REQUEST, "responseType must be EMAIL or PHONE"));
+  }
+
+  if (!responseValue) {
+    return next(httpError(statusCodes.BAD_REQUEST, "responseValue is required"));
+  }
 
   let lead = await Lead.findOne({
     _id: leadId,
     stage: "LQ",
-    assignedTo: req.user.id,
+    assignedTo: req.user.id
   });
-  if (!lead)
-    return next(
-      httpError(statusCodes.NOT_FOUND, "Lead not found / not assigned to you")
-    );
 
-  // verify manager exists and approved
+  if (!lead) {
+    return next(httpError(statusCodes.NOT_FOUND, "Lead not found / not assigned to you"));
+  }
+
+  // verify manager
   let manager = await User.findOne({
     _id: managerId,
     role: "Manager",
-    status: "APPROVED",
+    status: "APPROVED"
   }).select("_id role");
-  if (!manager)
+
+  if (!manager) {
     return next(httpError(statusCodes.BAD_REQUEST, "Invalid managerId"));
+  }
+
+  // validate response source is from THIS lead
+  let normalized = "";
+
+  if (responseType === "EMAIL") {
+    normalized = responseValue.toLowerCase();
+    let found = false;
+
+    for (let i = 0; i < lead.emails.length; i++) {
+      if (String(lead.emails[i].value || "").toLowerCase() === normalized) {
+        found = true;
+        normalized = String(lead.emails[i].normalized || "").toLowerCase();
+        break;
+      }
+    }
+
+    if (!found) {
+      return next(httpError(statusCodes.BAD_REQUEST, "Selected email not found in this lead"));
+    }
+  }
+
+  if (responseType === "PHONE") {
+    let foundPhone = false;
+
+    for (let j = 0; j < lead.phones.length; j++) {
+      if (String(lead.phones[j] || "").trim() === responseValue) {
+        foundPhone = true;
+        break;
+      }
+    }
+
+    if (!foundPhone) {
+      return next(httpError(statusCodes.BAD_REQUEST, "Selected phone not found in this lead"));
+    }
+
+    normalized = String(responseValue || "").replace(/\D/g, "");
+  }
 
   let pkt = getPktDateTime();
 
-  // optional comment on assignment
   if (commentText) {
     if (commentText.length > 1000) {
       return next(httpError(statusCodes.BAD_REQUEST, "Comment too long"));
@@ -187,17 +235,27 @@ let assignToManager = asyncHandler(async function (req, res, next) {
       createdByRole: "Lead Qualifiers",
       createdAt: pkt.now,
       createdDate: pkt.pktDate,
-      createdTime: pkt.pktTime,
+      createdTime: pkt.pktTime
     });
   }
 
-  // move to manager stage + assign
+  // store response source
+  lead.responseSource = {
+    type: responseType,
+    value: responseValue,
+    normalized: normalized,
+    selectedBy: req.user.id,
+    selectedAt: pkt.now,
+    selectedDate: pkt.pktDate,
+    selectedTime: pkt.pktTime
+  };
+
+  // move stage
   lead.stage = "MANAGER";
   lead.assignedTo = manager._id;
   lead.assignedToRole = "Manager";
   lead.assignedAt = pkt.now;
 
-  // keep LQ metadata
   lead.lqUpdatedAt = pkt.now;
   lead.lqUpdatedBy = req.user.id;
 
@@ -208,8 +266,10 @@ let assignToManager = asyncHandler(async function (req, res, next) {
     message: "Assigned to manager",
     leadId: lead._id,
     assignedTo: String(manager._id),
+    responseSource: lead.responseSource
   });
 });
+
 
 module.exports = {
   getManagersList: getManagersList,

@@ -18,6 +18,7 @@ let EmailSchema = new mongoose.Schema(
       enum: ["PENDING", "ACTIVE", "BOUNCED", "DEAD"],
       default: "PENDING",
     },
+
     verifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     verifiedAt: { type: Date },
   },
@@ -81,6 +82,19 @@ let LeadSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    responseSource: {
+      type: {
+        type: String,
+        enum: ["EMAIL", "PHONE"],
+        default: "",
+      },
+      value: { type: String, trim: true, default: "" }, // the raw selected email/phone
+      normalized: { type: String, trim: true, default: "" }, // normalized email/phone
+      selectedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      selectedAt: { type: Date },
+      selectedDate: { type: String, default: "" }, // PKT date
+      selectedTime: { type: String, default: "" }, // PKT time
+    },
   },
   { timestamps: true }
 );
@@ -93,6 +107,5 @@ LeadSchema.index({ stage: 1, createdAt: -1 });
 LeadSchema.index({ assignedTo: 1, stage: 1, createdAt: -1 });
 LeadSchema.index({ stage: 1, assignedTo: 1, createdAt: -1 });
 LeadSchema.index({ lqStatus: 1, stage: 1 });
-
 
 module.exports = mongoose.model("Lead", LeadSchema);
