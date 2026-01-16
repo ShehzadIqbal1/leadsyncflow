@@ -7,23 +7,15 @@ let normalize = require("../utils/normalize");
 let leadValidator = require("../validators/leadValidator");
 
 // --------------------------------------------------
-// Duplicate finder (updated for new Lead model paths)
+// Duplicate finder (FULL EMAIL + PHONE ONLY)
 // --------------------------------------------------
-async function findDuplicates(emailNorms, emailLocals, phoneNorms) {
+async function findDuplicates(emailNorms, phoneNorms) {
   let tasks = [];
 
   tasks.push(
     emailNorms && emailNorms.length
       ? Lead.distinct("emails.normalized", {
-          "emails.normalized": { $in: emailNorms }
-        })
-      : Promise.resolve([])
-  );
-
-  tasks.push(
-    emailLocals && emailLocals.length
-      ? Lead.distinct("emails.localPart", {
-          "emails.localPart": { $in: emailLocals }
+          "emails.normalized": { $in: emailNorms },
         })
       : Promise.resolve([])
   );
@@ -31,7 +23,7 @@ async function findDuplicates(emailNorms, emailLocals, phoneNorms) {
   tasks.push(
     phoneNorms && phoneNorms.length
       ? Lead.distinct("phonesNormalized", {
-          phonesNormalized: { $in: phoneNorms }
+          phonesNormalized: { $in: phoneNorms },
         })
       : Promise.resolve([])
   );
@@ -40,13 +32,12 @@ async function findDuplicates(emailNorms, emailLocals, phoneNorms) {
 
   return {
     duplicateEmails: results[0] || [],
-    duplicateEmailLocalParts: results[1] || [],
-    duplicatePhones: results[2] || []
+    duplicatePhones: results[1] || [],
   };
 }
 
 // --------------------------------------------------
-// Build Email subdocuments safely
+// Build Email subdocuments safely (NO localPart)
 // --------------------------------------------------
 function buildEmailObjects(rawEmails) {
   let arr = Array.isArray(rawEmails) ? rawEmails : [];
@@ -59,13 +50,10 @@ function buildEmailObjects(rawEmails) {
     let eNorm = normalize.normalizeEmail(raw);
     if (!normalize.isValidEmail(eNorm)) continue;
 
-    let local = normalize.emailLocalPart(eNorm) || "";
-
     out.push({
       value: raw,
       normalized: eNorm,
-      localPart: local,
-      status: "PENDING"
+      status: "PENDING",
     });
   }
 
@@ -73,7 +61,7 @@ function buildEmailObjects(rawEmails) {
 }
 
 // --------------------------------------------------
-// GET /api/dm/duplicates/check
+// GET /api/dm/duplicates/check?email=... OR ?phone=...
 // --------------------------------------------------
 let liveDuplicateCheck = asyncHandler(async function (req, res, next) {
   let email = String(req.query.email || "").trim();
@@ -86,8 +74,7 @@ let liveDuplicateCheck = asyncHandler(async function (req, res, next) {
   let out = {
     success: true,
     email: { exists: false, match: "" },
-    emailLocalPart: { exists: false, match: "" },
-    phone: { exists: false, match: "" }
+    phone: { exists: false, match: "" },
   };
 
   if (email) {
@@ -96,26 +83,13 @@ let liveDuplicateCheck = asyncHandler(async function (req, res, next) {
       return next(httpError(statusCodes.BAD_REQUEST, "Invalid email"));
     }
 
-    let local = normalize.emailLocalPart(eNorm);
-
     let dupFull = await Lead.distinct("emails.normalized", {
-      "emails.normalized": { $in: [eNorm] }
+      "emails.normalized": { $in: [eNorm] },
     });
 
-    if (dupFull.length) {
+    if (dupFull && dupFull.length) {
       out.email.exists = true;
       out.email.match = eNorm;
-    }
-
-    if (local) {
-      let dupLocal = await Lead.distinct("emails.localPart", {
-        "emails.localPart": { $in: [local] }
-      });
-
-      if (dupLocal.length) {
-        out.emailLocalPart.exists = true;
-        out.emailLocalPart.match = local;
-      }
     }
   }
 
@@ -126,10 +100,10 @@ let liveDuplicateCheck = asyncHandler(async function (req, res, next) {
     }
 
     let dupPhone = await Lead.distinct("phonesNormalized", {
-      phonesNormalized: { $in: [pNorm] }
+      phonesNormalized: { $in: [pNorm] },
     });
 
-    if (dupPhone.length) {
+    if (dupPhone && dupPhone.length) {
       out.phone.exists = true;
       out.phone.match = pNorm;
     }
@@ -150,18 +124,18 @@ let getMyStats = asyncHandler(async function (req, res, next) {
 
   let todayCount = await Lead.countDocuments({
     createdBy: userId,
-    createdAt: { $gte: todayStart }
+    createdAt: { $gte: todayStart },
   });
 
   let monthCount = await Lead.countDocuments({
     createdBy: userId,
-    createdAt: { $gte: monthStart }
+    createdAt: { $gte: monthStart },
   });
 
   return res.status(statusCodes.OK).json({
     success: true,
-    todayCount,
-    monthCount
+    todayCount: todayCount,
+    monthCount: monthCount,
   });
 });
 
@@ -174,64 +148,50 @@ let submitLead = asyncHandler(async function (req, res, next) {
     return res.status(statusCodes.BAD_REQUEST).json({
       success: false,
       message: validation.message,
-      fields: validation.fields || {}
+      fields: validation.fields || {},
     });
   }
 
   let data = validation.data;
 
-  // Build email subdocuments
+  // Build email subdocuments (NO localPart)
   let emailObjects = buildEmailObjects(data.emails);
 
   // SAFETY: at least one email OR phone must survive normalization
-  if (!emailObjects.length && !data.phonesNormalized.length) {
+  if (!emailObjects.length && (!data.phonesNormalized || !data.phonesNormalized.length)) {
     return next(
-      httpError(
-        statusCodes.BAD_REQUEST,
-        "No valid email or phone number provided"
-      )
+      httpError(statusCodes.BAD_REQUEST, "No valid email or phone number provided")
     );
   }
 
-  // Extract for duplicate check
+  // Extract normalized emails for duplicate check
   let emailsNorm = [];
-  let emailLocals = [];
-
   for (let i = 0; i < emailObjects.length; i++) {
     emailsNorm.push(emailObjects[i].normalized);
-    if (emailObjects[i].localPart) {
-      emailLocals.push(emailObjects[i].localPart);
-    }
   }
 
-  let dups = await findDuplicates(
-    emailsNorm,
-    emailLocals,
-    data.phonesNormalized
-  );
+  // Duplicate check (FULL EMAIL + PHONE ONLY)
+  let dups = await findDuplicates(emailsNorm, data.phonesNormalized);
 
   let hasDup =
-    dups.duplicateEmails.length ||
-    dups.duplicateEmailLocalParts.length ||
-    dups.duplicatePhones.length;
+    (dups.duplicateEmails && dups.duplicateEmails.length) ||
+    (dups.duplicatePhones && dups.duplicatePhones.length);
 
   if (hasDup) {
     return res.status(statusCodes.CONFLICT).json({
       success: false,
       message: "Duplicate fields found",
-      duplicates: dups
+      duplicates: dups,
     });
   }
 
   // 🇵🇰 Pakistan Standard Time
   let now = new Date();
-  let pktDate = now.toLocaleDateString("en-CA", {
-    timeZone: "Asia/Karachi"
-  });
+  let pktDate = now.toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" }); // YYYY-MM-DD
   let pktTime = now.toLocaleTimeString("en-GB", {
     timeZone: "Asia/Karachi",
-    hour12: false
-  });
+    hour12: false,
+  }); // HH:mm:ss
 
   let lead = await Lead.create({
     name: data.name,
@@ -244,7 +204,7 @@ let submitLead = asyncHandler(async function (req, res, next) {
     status: "UNPAID",
     submittedDate: pktDate,
     submittedTime: pktTime,
-    createdBy: req.user.id
+    createdBy: req.user.id,
   });
 
   return res.status(statusCodes.CREATED).json({
@@ -252,12 +212,12 @@ let submitLead = asyncHandler(async function (req, res, next) {
     message: "Lead submitted successfully",
     leadId: lead._id,
     submittedDate: pktDate,
-    submittedTime: pktTime
+    submittedTime: pktTime,
   });
 });
 
 module.exports = {
-  liveDuplicateCheck,
-  getMyStats,
-  submitLead
+  liveDuplicateCheck: liveDuplicateCheck,
+  getMyStats: getMyStats,
+  submitLead: submitLead,
 };
