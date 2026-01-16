@@ -86,14 +86,13 @@ let LeadSchema = new mongoose.Schema(
       type: {
         type: String,
         enum: ["EMAIL", "PHONE"],
-        default: "",
       },
-      value: { type: String, trim: true, default: "" }, // the raw selected email/phone
-      normalized: { type: String, trim: true, default: "" }, // normalized email/phone
+      value: { type: String, trim: true, default: "" },
+      normalized: { type: String, trim: true, default: "" },
       selectedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
       selectedAt: { type: Date },
-      selectedDate: { type: String, default: "" }, // PKT date
-      selectedTime: { type: String, default: "" }, // PKT time
+      selectedDate: { type: String, default: "" },
+      selectedTime: { type: String, default: "" },
     },
   },
   { timestamps: true }
