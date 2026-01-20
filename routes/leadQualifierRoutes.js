@@ -16,28 +16,28 @@ router.get(
 router.get(
   "/leads",
   requireAuth,
-  requireRole(["Lead Qualifiers", "Super Admin", "Admin"]),
+  requireRole(["Lead Qualifiers","Admin"]),
   lqController.getMyLeads
 );
 
 router.patch(
   "/leads/:leadId/status",
   requireAuth,
-  requireRole(["Lead Qualifiers", "Super Admin", "Admin"]),
+  requireRole(["Lead Qualifiers", "Admin"]),
   lqController.updateLqStatus
 );
 
 router.post(
   "/leads/:leadId/comment",
   requireAuth,
-  requireRole(["Lead Qualifiers", "Super Admin", "Admin"]),
+  requireRole(["Lead Qualifiers", "Admin"]),
   lqController.addComment
 );
 
 router.post(
   "/leads/:leadId/assign-manager",
   requireAuth,
-  requireRole(["Lead Qualifiers", "Super Admin", "Admin"]),
+  requireRole(["Lead Qualifiers", "Admin"]),
   lqController.assignToManager
 );
 

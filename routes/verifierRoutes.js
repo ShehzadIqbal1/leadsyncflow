@@ -9,21 +9,21 @@ let verifierController = require("../controllers/verifierController");
 router.get(
   "/leads",
   requireAuth,
-  requireRole(["Verifier", "Super Admin", "Admin"]),
+  requireRole(["Verifier", "Admin"]),
   verifierController.getDmLeads
 );
 
 router.post(
   "/leads/:leadId/update-emails",
   requireAuth,
-  requireRole(["Verifier", "Super Admin", "Admin"]),
+  requireRole(["Verifier","Admin"]),
   verifierController.updateEmailStatuses
 );
 
 router.post(
   "/leads/:leadId/move-to-lq",
   requireAuth,
-  requireRole(["Verifier", "Super Admin", "Admin"]),
+  requireRole(["Verifier", "Admin"]),
   verifierController.moveLeadToLeadQualifiers
 );
 
