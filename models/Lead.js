@@ -1,3 +1,4 @@
+// models/Lead.js
 let mongoose = require("mongoose");
 
 let SourceSchema = new mongoose.Schema(
@@ -10,7 +11,7 @@ let SourceSchema = new mongoose.Schema(
 
 let EmailSchema = new mongoose.Schema(
   {
-    value: { type: String, required: true, trim: true }, // raw email
+    value: { type: String, required: true, trim: true }, // raw
     normalized: { type: String, required: true, trim: true }, // full normalized email
     status: {
       type: String,
@@ -33,8 +34,8 @@ let CommentSchema = new mongoose.Schema(
     },
     createdByRole: { type: String, default: "" },
     createdAt: { type: Date, default: Date.now },
-    createdDate: { type: String, default: "" }, // PKT date string for UI
-    createdTime: { type: String, default: "" }, // PKT time string for UI
+    createdDate: { type: String, default: "" }, // PKT date string
+    createdTime: { type: String, default: "" }, // PKT time string
   },
   { _id: false }
 );
@@ -44,14 +45,14 @@ let ResponseSourceSchema = new mongoose.Schema(
     type: {
       type: String,
       enum: ["EMAIL", "PHONE"],
-      default: undefined, //Set at the lead qualifier stage
+      default: undefined, // set by LQ only (do not auto-set at DM stage)
     },
     value: { type: String, trim: true, default: "" }, // raw selected email/phone
     normalized: { type: String, trim: true, default: "" }, // normalized selected email/phone
     selectedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     selectedAt: { type: Date },
-    selectedDate: { type: String, default: "" }, // PKT date
-    selectedTime: { type: String, default: "" }, // PKT time
+    selectedDate: { type: String, default: "" },
+    selectedTime: { type: String, default: "" },
   },
   { _id: false }
 );
@@ -60,24 +61,21 @@ let LeadSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
 
-    // emails with per-email status
     emails: { type: [EmailSchema], default: [] },
 
-    // phones
     phones: { type: [String], default: [] },
     phonesNormalized: { type: [String], default: [] },
 
     location: { type: String, trim: true, default: "" },
 
-    // NOW only one source link required by your new rule:
-    // You can keep it as array (easy UI), but you can enforce ">= 1" in validator.
+    // keep as array; enforce "at least 1" in validator
     sources: { type: [SourceSchema], default: [] },
 
     // workflow
-    stage: { type: String, default: "DM" }, // DM -> VERIFIER -> LQ -> MANAGER
-    status: { type: String, default: "UNPAID" }, // manager can set PAID later
+    stage: { type: String, default: "DM" }, // DM -> LQ -> MANAGER (Verifier works while stage is DM)
+    status: { type: String, default: "UNPAID" }, // manager can set PAID
 
-    // assignment routing
+    // assignment
     assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     assignedToRole: { type: String, default: "" },
     assignedAt: { type: Date },
@@ -87,19 +85,18 @@ let LeadSchema = new mongoose.Schema(
     submittedDate: { type: String, default: "" },
     submittedTime: { type: String, default: "" },
 
-    // LQ workflow fields
+    // LQ stage fields
     lqStatus: {
       type: String,
       enum: ["PENDING", "IN_CONVERSATION", "DEAD", "QUALIFIED"],
       default: "PENDING",
     },
-
     comments: { type: [CommentSchema], default: [] },
-
     lqUpdatedAt: { type: Date },
     lqUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
 
-    responseSource: { type: ResponseSourceSchema, default: {} },
+    // LQ chooses which email/phone drove the response
+    responseSource: { type: ResponseSourceSchema, default: undefined },
 
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -110,19 +107,18 @@ let LeadSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-/**
- *  Indexes for fast duplicate checks (large dataset)
- * Multikey index on emails.normalized makes $in queries fast.
- * Multikey index on phonesNormalized makes $in queries fast.
- */
+// --------------------
+// Duplicate-check indexes (full email + full phone normalized)
+// --------------------
 LeadSchema.index({ "emails.normalized": 1 });
 LeadSchema.index({ phonesNormalized: 1 });
 
-/**
- * Common dashboard indexes
- */
+// --------------------
+// Dashboard / filtering indexes
+// --------------------
 LeadSchema.index({ stage: 1, createdAt: -1 });
 LeadSchema.index({ assignedTo: 1, stage: 1, createdAt: -1 });
 LeadSchema.index({ lqStatus: 1, stage: 1 });
+LeadSchema.index({ status: 1, stage: 1 });
 
 module.exports = mongoose.model("Lead", LeadSchema);

@@ -7,7 +7,7 @@ let connectDb = require("./config/db");
 let errorHandler = require("./middlewares/errorHandler");
 
 let authRoutes = require("./routes/authRoutes");
-let adminRoutes = require("./routes/adminRoutes");
+let superAdminRoutes = require("./routes/superAdminRoutes");
 let dataMinorRoutes = require("./routes/dataMinorRoutes");
 let verifierRoutes = require("./routes/verifierRoutes");
 let leadQualifierRoutes = require("./routes/leadQualifierRoutes");
@@ -28,7 +28,7 @@ app.get("/", function (req, res) {
 });
 
 app.use("/api/auth", authRoutes);
-app.use("/api/admin", adminRoutes);
+app.use("/api/superadmin", superAdminRoutes);
 app.use("/api/dm", dataMinorRoutes);
 app.use("/api/verifier", verifierRoutes);
 app.use("/api/lq", leadQualifierRoutes);

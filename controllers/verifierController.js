@@ -45,7 +45,6 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
   }
 
   let emails = Array.isArray(req.body && req.body.emails) ? req.body.emails : [];
-
   if (!emails.length) {
     return next(httpError(statusCodes.BAD_REQUEST, "emails array is required"));
   }
@@ -57,6 +56,11 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
     return next(httpError(statusCodes.BAD_REQUEST, "Lead is not in DM stage"));
   }
 
+  // If lead has no emails, verifier can't update anything (but lead can still move to LQ later)
+  if (!Array.isArray(lead.emails) || lead.emails.length === 0) {
+    return next(httpError(statusCodes.BAD_REQUEST, "This lead has no emails to update"));
+  }
+
   // Build lookup map from existing lead emails (normalized => index)
   let idxMap = new Map();
   for (let i = 0; i < lead.emails.length; i++) {
@@ -65,6 +69,7 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
   }
 
   let updatedCount = 0;
+  let ignoredCount = 0;
   let now = new Date();
 
   for (let i = 0; i < emails.length; i++) {
@@ -72,10 +77,16 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
     let norm = String(incoming.normalized || "").trim().toLowerCase();
     let status = String(incoming.status || "").trim().toUpperCase();
 
-    if (!norm || !isValidEmailStatus(status)) continue;
+    if (!norm || !isValidEmailStatus(status)) {
+      ignoredCount++;
+      continue;
+    }
 
     let idx = idxMap.get(norm);
-    if (idx === undefined) continue;
+    if (idx === undefined) {
+      ignoredCount++;
+      continue;
+    }
 
     // update
     lead.emails[idx].status = status;
@@ -89,7 +100,8 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
   return res.status(statusCodes.OK).json({
     success: true,
     message: "Email statuses updated",
-    updatedCount: updatedCount
+    updatedCount: updatedCount,
+    ignoredCount: ignoredCount
   });
 });
 
@@ -108,13 +120,20 @@ let moveLeadToLeadQualifiers = asyncHandler(async function (req, res, next) {
     return next(httpError(statusCodes.CONFLICT, "Lead already moved from DM"));
   }
 
-  let hasAnyReviewed = Array.isArray(lead.emails) && lead.emails.some(function (e) {
-    return e && e.status && e.status !== "PENDING";
-  });
+  // ✅ DM can submit phone-only leads. For those, verifier shouldn't block move.
+  let hasEmails = Array.isArray(lead.emails) && lead.emails.length > 0;
 
-  if (!hasAnyReviewed) {
-    return next(httpError(statusCodes.BAD_REQUEST, "No email status updated yet"));
+  let hasAnyReviewed = false;
+  if (hasEmails) {
+    hasAnyReviewed = lead.emails.some(function (e) {
+      return e && e.status && e.status !== "PENDING";
+    });
+
+    if (!hasAnyReviewed) {
+      return next(httpError(statusCodes.BAD_REQUEST, "No email status updated yet"));
+    }
   }
+  // If there are no emails, allow moving (phone-only flow)
 
   let nextLq = await assignmentService.getNextLeadQualifier();
   if (!nextLq) {

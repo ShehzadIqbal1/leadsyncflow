@@ -6,9 +6,54 @@ let asyncHandler = require("../middlewares/asyncHandler");
 let normalize = require("../utils/normalize");
 let leadValidator = require("../validators/leadValidator");
 
-// --------------------------------------------------
+// ---------------------------------------------
+// PKT helpers
+// ---------------------------------------------
+function getPktNow() {
+  let now = new Date();
+  let pktDate = now.toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" }); // YYYY-MM-DD
+  let pktTime = now.toLocaleTimeString("en-GB", {
+    timeZone: "Asia/Karachi",
+    hour12: false,
+  }); // HH:mm:ss
+  return { now: now, pktDate: pktDate, pktTime: pktTime };
+}
+
+// Build PKT day start/end in UTC-safe way using string date
+function pktDayRangeUtc(pktDateStr) {
+  // pktDateStr is like "2026-01-21"
+  // Create PKT start/end strings and let JS parse as UTC by adding Z AFTER converting to PKT is messy.
+  // Simpler: use Intl to get pkt components, then compute UTC by offset is non-trivial.
+  // Minimal practical approach: use server Date but with PKT date string boundaries as "local" in PKT:
+  let start = new Date(pktDateStr + "T00:00:00.000+05:00");
+  let end = new Date(pktDateStr + "T23:59:59.999+05:00");
+  return { start: start, end: end };
+}
+
+function pktMonthRangeUtc(pktDateStr) {
+  // pktDateStr "YYYY-MM-DD"
+  let y = parseInt(pktDateStr.slice(0, 4), 10);
+  let m = parseInt(pktDateStr.slice(5, 7), 10); // 1-12
+
+  let monthStartStr = y + "-" + String(m).padStart(2, "0") + "-01";
+  let start = new Date(monthStartStr + "T00:00:00.000+05:00");
+
+  // next month start
+  let ny = y;
+  let nm = m + 1;
+  if (nm === 13) {
+    nm = 1;
+    ny = y + 1;
+  }
+  let nextMonthStartStr =
+    ny + "-" + String(nm).padStart(2, "0") + "-01";
+  let end = new Date(nextMonthStartStr + "T00:00:00.000+05:00"); // exclusive
+  return { start: start, end: end };
+}
+
+// ---------------------------------------------
 // Duplicate finder (FULL EMAIL + PHONE ONLY)
-// --------------------------------------------------
+// ---------------------------------------------
 async function findDuplicates(emailNorms, phoneNorms) {
   let tasks = [];
 
@@ -36,9 +81,9 @@ async function findDuplicates(emailNorms, phoneNorms) {
   };
 }
 
-// --------------------------------------------------
+// ---------------------------------------------
 // Build Email subdocuments safely (NO localPart)
-// --------------------------------------------------
+// ---------------------------------------------
 function buildEmailObjects(rawEmails) {
   let arr = Array.isArray(rawEmails) ? rawEmails : [];
   let out = [];
@@ -60,9 +105,9 @@ function buildEmailObjects(rawEmails) {
   return out;
 }
 
-// --------------------------------------------------
+// ---------------------------------------------
 // GET /api/dm/duplicates/check?email=... OR ?phone=...
-// --------------------------------------------------
+// ---------------------------------------------
 let liveDuplicateCheck = asyncHandler(async function (req, res, next) {
   let email = String(req.query.email || "").trim();
   let phone = String(req.query.phone || "").trim();
@@ -112,24 +157,25 @@ let liveDuplicateCheck = asyncHandler(async function (req, res, next) {
   return res.status(statusCodes.OK).json(out);
 });
 
-// --------------------------------------------------
-// GET /api/dm/stats
-// --------------------------------------------------
+// ---------------------------------------------
+// GET /api/dm/stats  (PKT-correct)
+// ---------------------------------------------
 let getMyStats = asyncHandler(async function (req, res, next) {
   let userId = req.user.id;
 
-  let now = new Date();
-  let todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  let monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  let pkt = getPktNow();
+
+  let day = pktDayRangeUtc(pkt.pktDate);
+  let month = pktMonthRangeUtc(pkt.pktDate);
 
   let todayCount = await Lead.countDocuments({
     createdBy: userId,
-    createdAt: { $gte: todayStart },
+    createdAt: { $gte: day.start, $lte: day.end },
   });
 
   let monthCount = await Lead.countDocuments({
     createdBy: userId,
-    createdAt: { $gte: monthStart },
+    createdAt: { $gte: month.start, $lt: month.end },
   });
 
   return res.status(statusCodes.OK).json({
@@ -139,9 +185,9 @@ let getMyStats = asyncHandler(async function (req, res, next) {
   });
 });
 
-// --------------------------------------------------
+// ---------------------------------------------
 // POST /api/dm/leads
-// --------------------------------------------------
+// ---------------------------------------------
 let submitLead = asyncHandler(async function (req, res, next) {
   let validation = leadValidator.validateDataMinorLead(req.body);
   if (!validation.ok) {
@@ -154,13 +200,19 @@ let submitLead = asyncHandler(async function (req, res, next) {
 
   let data = validation.data;
 
-  // Build email subdocuments (NO localPart)
+  // Build email subdocuments
   let emailObjects = buildEmailObjects(data.emails);
 
   // SAFETY: at least one email OR phone must survive normalization
-  if (!emailObjects.length && (!data.phonesNormalized || !data.phonesNormalized.length)) {
+  if (
+    !emailObjects.length &&
+    (!data.phonesNormalized || !data.phonesNormalized.length)
+  ) {
     return next(
-      httpError(statusCodes.BAD_REQUEST, "No valid email or phone number provided")
+      httpError(
+        statusCodes.BAD_REQUEST,
+        "No valid email or phone number provided"
+      )
     );
   }
 
@@ -186,12 +238,11 @@ let submitLead = asyncHandler(async function (req, res, next) {
   }
 
   // 🇵🇰 Pakistan Standard Time
-  let now = new Date();
-  let pktDate = now.toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" }); // YYYY-MM-DD
-  let pktTime = now.toLocaleTimeString("en-GB", {
-    timeZone: "Asia/Karachi",
-    hour12: false,
-  }); // HH:mm:ss
+  let pkt = getPktNow();
+
+  // ✅ ONLY ONE SOURCE LINK (store first only)
+  let sources = Array.isArray(data.sources) ? data.sources : [];
+  let firstSource = sources.length ? [sources[0]] : [];
 
   let lead = await Lead.create({
     name: data.name,
@@ -199,11 +250,11 @@ let submitLead = asyncHandler(async function (req, res, next) {
     emails: emailObjects,
     phones: data.phones,
     phonesNormalized: data.phonesNormalized,
-    sources: data.sources,
+    sources: firstSource,
     stage: "DM",
     status: "UNPAID",
-    submittedDate: pktDate,
-    submittedTime: pktTime,
+    submittedDate: pkt.pktDate,
+    submittedTime: pkt.pktTime,
     createdBy: req.user.id,
   });
 
@@ -211,8 +262,8 @@ let submitLead = asyncHandler(async function (req, res, next) {
     success: true,
     message: "Lead submitted successfully",
     leadId: lead._id,
-    submittedDate: pktDate,
-    submittedTime: pktTime,
+    submittedDate: pkt.pktDate,
+    submittedTime: pkt.pktTime,
   });
 });
 

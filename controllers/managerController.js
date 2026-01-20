@@ -1,7 +1,13 @@
+// controllers/managerController.js
+let mongoose = require("mongoose");
 let Lead = require("../models/Lead");
 let statusCodes = require("../utils/statusCodes");
 let httpError = require("../utils/httpError");
 let asyncHandler = require("../middlewares/asyncHandler");
+
+function isValidObjectId(id) {
+  return mongoose.Types.ObjectId.isValid(String(id || ""));
+}
 
 // 🇵🇰 PKT date/time helper
 function getPKT() {
@@ -17,7 +23,7 @@ function getPKT() {
 }
 
 // --------------------------------------------------
-// GET /api/manager/leads
+// GET /api/manager/leads?limit=20&skip=0
 // Returns leads assigned to THIS manager in MANAGER stage
 // --------------------------------------------------
 let getMyAssignedLeads = asyncHandler(async function (req, res, next) {
@@ -25,9 +31,9 @@ let getMyAssignedLeads = asyncHandler(async function (req, res, next) {
 
   let limit = parseInt(req.query.limit || "20", 10);
   let skip = parseInt(req.query.skip || "0", 10);
-  if (!limit || limit < 1) limit = 20;
+  if (isNaN(limit) || limit < 1) limit = 20;
   if (limit > 100) limit = 100;
-  if (!skip || skip < 0) skip = 0;
+  if (isNaN(skip) || skip < 0) skip = 0;
 
   let leads = await Lead.find({
     assignedTo: managerId,
@@ -40,7 +46,8 @@ let getMyAssignedLeads = asyncHandler(async function (req, res, next) {
       "name location emails phones sources stage status lqStatus comments responseSource assignedAt submittedDate submittedTime createdAt createdBy assignedTo"
     )
     .populate("createdBy", "name email role")
-    .populate("assignedTo", "name email role");
+    .populate("assignedTo", "name email role")
+    .populate("comments.createdBy", "name email role");
 
   return res.status(statusCodes.OK).json({
     success: true,
@@ -52,16 +59,19 @@ let getMyAssignedLeads = asyncHandler(async function (req, res, next) {
 // POST /api/manager/leads/:id/decision
 // body: { decision: "ACCEPT" | "REJECT", comment }
 // Notes:
+// - Manager only decides on MANAGER stage leads
 // - Keeps comment history
-// - Sets stage to DONE or REJECTED (simple & consistent)
+// - Stage becomes DONE or REJECTED (simple & consistent)
 // --------------------------------------------------
 let decisionOnLead = asyncHandler(async function (req, res, next) {
   let leadId = req.params.id;
+  if (!isValidObjectId(leadId)) {
+    return next(httpError(statusCodes.BAD_REQUEST, "Invalid leadId"));
+  }
 
   let decision = String((req.body && req.body.decision) || "")
     .trim()
     .toUpperCase();
-
   let comment = String((req.body && req.body.comment) || "").trim();
 
   if (["ACCEPT", "REJECT"].indexOf(decision) === -1) {
@@ -72,7 +82,11 @@ let decisionOnLead = asyncHandler(async function (req, res, next) {
     return next(httpError(statusCodes.BAD_REQUEST, "Comment is required"));
   }
 
-  // Make sure lead is assigned to this manager and in correct stage
+  if (comment.length > 1000) {
+    return next(httpError(statusCodes.BAD_REQUEST, "Comment too long"));
+  }
+
+  // Must be assigned to this manager + in MANAGER stage
   let lead = await Lead.findOne({
     _id: leadId,
     assignedTo: req.user.id,
@@ -80,12 +94,13 @@ let decisionOnLead = asyncHandler(async function (req, res, next) {
   });
 
   if (!lead) {
-    return next(httpError(statusCodes.NOT_FOUND, "Lead not found / not assigned to you"));
+    return next(
+      httpError(statusCodes.NOT_FOUND, "Lead not found / not assigned to you")
+    );
   }
 
   let pkt = getPKT();
 
-  // history comment
   lead.comments.push({
     text: comment,
     createdBy: req.user.id,
@@ -95,41 +110,52 @@ let decisionOnLead = asyncHandler(async function (req, res, next) {
     createdTime: pkt.time
   });
 
-  // simple stage outcomes
-  if (decision === "REJECT") {
-    lead.stage = "REJECTED";
-  } else {
-    lead.stage = "DONE";
-  }
+  // outcome stage
+  lead.stage = decision === "REJECT" ? "REJECTED" : "DONE";
 
   await lead.save();
 
   return res.status(statusCodes.OK).json({
     success: true,
-    message: "Lead " + (decision === "REJECT" ? "rejected" : "accepted") + " successfully",
-    stage: lead.stage
+    message:
+      "Lead " + (decision === "REJECT" ? "rejected" : "accepted") + " successfully",
+    stage: lead.stage,
+    status: lead.status
   });
 });
 
 // --------------------------------------------------
 // POST /api/manager/leads/:id/comment
 // body: { comment }
+// Notes:
+// - Only allow manager comments for MANAGER stage leads assigned to them
 // --------------------------------------------------
 let addManagerComment = asyncHandler(async function (req, res, next) {
   let leadId = req.params.id;
+  if (!isValidObjectId(leadId)) {
+    return next(httpError(statusCodes.BAD_REQUEST, "Invalid leadId"));
+  }
+
   let comment = String((req.body && req.body.comment) || "").trim();
 
   if (!comment) {
     return next(httpError(statusCodes.BAD_REQUEST, "Comment is required"));
   }
 
+  if (comment.length > 1000) {
+    return next(httpError(statusCodes.BAD_REQUEST, "Comment too long"));
+  }
+
   let lead = await Lead.findOne({
     _id: leadId,
-    assignedTo: req.user.id
+    assignedTo: req.user.id,
+    stage: "MANAGER"
   });
 
   if (!lead) {
-    return next(httpError(statusCodes.NOT_FOUND, "Lead not found / not assigned to you"));
+    return next(
+      httpError(statusCodes.NOT_FOUND, "Lead not found / not assigned to you")
+    );
   }
 
   let pkt = getPKT();
@@ -155,9 +181,16 @@ let addManagerComment = asyncHandler(async function (req, res, next) {
 // --------------------------------------------------
 // POST /api/manager/leads/:id/payment-status
 // body: { status: "PAID" }
+// Notes:
+// - Only manager assigned can mark PAID
+// - Only while lead is in MANAGER stage
 // --------------------------------------------------
 let updatePaymentStatus = asyncHandler(async function (req, res, next) {
   let leadId = req.params.id;
+  if (!isValidObjectId(leadId)) {
+    return next(httpError(statusCodes.BAD_REQUEST, "Invalid leadId"));
+  }
+
   let newStatus = String((req.body && req.body.status) || "")
     .trim()
     .toUpperCase();
@@ -168,11 +201,23 @@ let updatePaymentStatus = asyncHandler(async function (req, res, next) {
 
   let lead = await Lead.findOne({
     _id: leadId,
-    assignedTo: req.user.id
+    assignedTo: req.user.id,
+    stage: "MANAGER"
   });
 
   if (!lead) {
-    return next(httpError(statusCodes.NOT_FOUND, "Lead not found / not assigned to you"));
+    return next(
+      httpError(statusCodes.NOT_FOUND, "Lead not found / not assigned to you")
+    );
+  }
+
+  // idempotent
+  if (lead.status === "PAID") {
+    return res.status(statusCodes.OK).json({
+      success: true,
+      message: "Lead already marked as PAID",
+      status: lead.status
+    });
   }
 
   lead.status = "PAID";
