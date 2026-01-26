@@ -43,21 +43,21 @@ router.get(
 router.get(
   "/requests/pending",
   requireAuth,
-  requireSuperAdmin,
+  requireRole(["Super Admin", "Admin"]),
   superAdminController.getPendingRequests
 );
 
 router.patch(
   "/requests/:id/approve",
   requireAuth,
-  requireSuperAdmin,
+  requireRole(["Super Admin", "Admin"]),
   superAdminController.approveRequest
 );
 
 router.delete(
   "/requests/:id/reject",
   requireAuth,
-  requireSuperAdmin,
+  requireRole(["Super Admin", "Admin"]),
   superAdminController.rejectRequest
 );
 
