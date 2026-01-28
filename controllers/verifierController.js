@@ -23,15 +23,15 @@ let getDmLeads = asyncHandler(async function (req, res, next) {
   if (limit > 100) limit = 100;
   if (isNaN(skip) || skip < 0) skip = 0;
 
-  let leads = await Lead.find({ stage: "DM" })
+  let leads = await Lead.find({ stage: "Verifier" })
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(limit)
-    .select("name location emails phones sources submittedDate submittedTime createdAt");
+    .select("name emails submittedDate submittedTime ");
 
   return res.status(statusCodes.OK).json({
     success: true,
-    leads: leads
+    leads: leads,
   });
 });
 
@@ -44,7 +44,9 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
     return next(httpError(statusCodes.BAD_REQUEST, "Invalid leadId"));
   }
 
-  let emails = Array.isArray(req.body && req.body.emails) ? req.body.emails : [];
+  let emails = Array.isArray(req.body && req.body.emails)
+    ? req.body.emails
+    : [];
   if (!emails.length) {
     return next(httpError(statusCodes.BAD_REQUEST, "emails array is required"));
   }
@@ -58,13 +60,17 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
 
   // If lead has no emails, verifier can't update anything (but lead can still move to LQ later)
   if (!Array.isArray(lead.emails) || lead.emails.length === 0) {
-    return next(httpError(statusCodes.BAD_REQUEST, "This lead has no emails to update"));
+    return next(
+      httpError(statusCodes.BAD_REQUEST, "This lead has no emails to update"),
+    );
   }
 
   // Build lookup map from existing lead emails (normalized => index)
   let idxMap = new Map();
   for (let i = 0; i < lead.emails.length; i++) {
-    let n = String(lead.emails[i].normalized || "").trim().toLowerCase();
+    let n = String(lead.emails[i].normalized || "")
+      .trim()
+      .toLowerCase();
     if (n) idxMap.set(n, i);
   }
 
@@ -74,8 +80,12 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
 
   for (let i = 0; i < emails.length; i++) {
     let incoming = emails[i] || {};
-    let norm = String(incoming.normalized || "").trim().toLowerCase();
-    let status = String(incoming.status || "").trim().toUpperCase();
+    let norm = String(incoming.normalized || "")
+      .trim()
+      .toLowerCase();
+    let status = String(incoming.status || "")
+      .trim()
+      .toUpperCase();
 
     if (!norm || !isValidEmailStatus(status)) {
       ignoredCount++;
@@ -102,7 +112,7 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
     success: true,
     message: "Email statuses updated",
     updatedCount: updatedCount,
-    ignoredCount: ignoredCount
+    ignoredCount: ignoredCount,
   });
 });
 
@@ -117,28 +127,37 @@ let moveLeadToLeadQualifiers = asyncHandler(async function (req, res, next) {
   let lead = await Lead.findById(leadId);
   if (!lead) return next(httpError(statusCodes.NOT_FOUND, "Lead not found"));
 
-  if (lead.stage !== "DM") {
-    return next(httpError(statusCodes.CONFLICT, "Lead already moved from DM"));
+  if (lead.stage !== "Verifier") {
+    return next(
+      httpError(statusCodes.CONFLICT, "Lead is not in Verifier stage"),
+    );
   }
 
-  // ✅ DM can submit phone-only leads. For those, verifier shouldn't block move.
+  // DM can submit phone-only leads. For those, verifier shouldn't block move.
   let hasEmails = Array.isArray(lead.emails) && lead.emails.length > 0;
 
-  let hasAnyReviewed = false;
   if (hasEmails) {
-    hasAnyReviewed = lead.emails.some(function (e) {
+    let allEmailsProcessed = lead.emails.every(function (e) {
       return e && e.status && e.status !== "PENDING";
     });
 
-    if (!hasAnyReviewed) {
-      return next(httpError(statusCodes.BAD_REQUEST, "No email status updated yet"));
+    if (!allEmailsProcessed) {
+      return next(
+        httpError(
+          statusCodes.BAD_REQUEST,
+          "All emails must have a status updated before moving",
+        ),
+      );
     }
   }
+
   // If there are no emails, allow moving (phone-only flow)
 
   let nextLq = await assignmentService.getNextLeadQualifier();
   if (!nextLq) {
-    return next(httpError(statusCodes.BAD_REQUEST, "No Lead Qualifiers available"));
+    return next(
+      httpError(statusCodes.BAD_REQUEST, "No Lead Qualifiers available"),
+    );
   }
 
   let now = new Date();
@@ -155,12 +174,12 @@ let moveLeadToLeadQualifiers = asyncHandler(async function (req, res, next) {
     success: true,
     message: "Lead moved to Lead Qualifiers",
     leadId: lead._id,
-    assignedTo: String(nextLq._id)
+    assignedTo: String(nextLq._id),
   });
 });
 
 module.exports = {
   getDmLeads,
   updateEmailStatuses,
-  moveLeadToLeadQualifiers
+  moveLeadToLeadQualifiers,
 };
