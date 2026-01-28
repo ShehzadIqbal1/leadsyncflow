@@ -111,7 +111,7 @@ let decisionOnLead = asyncHandler(async function (req, res, next) {
   });
 
   // outcome stage
-  lead.stage = decision === "REJECT" ? "REJECTED" : "DONE";
+  lead.stage = decision === "REJECT" ? "REJECTED" : "MANAGER";
 
   await lead.save();
 

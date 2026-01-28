@@ -334,7 +334,6 @@ let assignToManager = asyncHandler(async function (req, res, next) {
   };
 
   // move to manager stage + assign
-  lead.stage = "MANAGER";
   lead.assignedTo = manager._id;
   lead.assignedToRole = "Manager";
   lead.assignedAt = pkt.now;

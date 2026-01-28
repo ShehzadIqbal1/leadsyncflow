@@ -89,6 +89,7 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
     }
 
     // update
+    lead.stage = "Verifier";
     lead.emails[idx].status = status;
     lead.emails[idx].verifiedBy = req.user.id;
     lead.emails[idx].verifiedAt = now;
