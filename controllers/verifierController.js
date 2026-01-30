@@ -1,7 +1,9 @@
 // controllers/verifierController.js
 let mongoose = require("mongoose");
 let Lead = require("../models/Lead");
+let Counter = require("../models/Counter");
 let statusCodes = require("../utils/statusCodes");
+let User = require("../models/User");
 let httpError = require("../utils/httpError");
 let asyncHandler = require("../middlewares/asyncHandler");
 let assignmentService = require("../utils/assignmentService");
@@ -50,7 +52,12 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
 
   // Only allow updates if the lead is in DM stage
   if (lead.stage !== "DM") {
-    return next(httpError(statusCodes.BAD_REQUEST, "Status can only be updated once while in DM stage"));
+    return next(
+      httpError(
+        statusCodes.BAD_REQUEST,
+        "Status can only be updated once while in DM stage",
+      ),
+    );
   }
 
   let hasEmails = Array.isArray(lead.emails) && lead.emails.length > 0;
@@ -67,15 +74,26 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
   }
 
   // CASE B: Lead HAS emails
-  let incomingArr = Array.isArray(req.body && req.body.emails) ? req.body.emails : [];
+  let incomingArr = Array.isArray(req.body && req.body.emails)
+    ? req.body.emails
+    : [];
   if (!incomingArr.length) {
-    return next(httpError(statusCodes.BAD_REQUEST, "Email data is required for this lead"));
+    return next(
+      httpError(
+        statusCodes.BAD_REQUEST,
+        "Email data is required for this lead",
+      ),
+    );
   }
 
   let incomingMap = new Map();
   for (let row of incomingArr) {
-    let norm = String(row.normalized || "").trim().toLowerCase();
-    let status = String(row.status || "").trim().toUpperCase();
+    let norm = String(row.normalized || "")
+      .trim()
+      .toLowerCase();
+    let status = String(row.status || "")
+      .trim()
+      .toUpperCase();
     if (norm && isValidEmailStatus(status)) {
       incomingMap.set(norm, status);
     }
@@ -86,7 +104,9 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
   let missingCount = 0;
 
   for (let e of lead.emails) {
-    let norm = String(e.normalized || "").trim().toLowerCase();
+    let norm = String(e.normalized || "")
+      .trim()
+      .toLowerCase();
     let nextStatus = incomingMap.get(norm);
 
     if (!nextStatus) {
@@ -105,7 +125,7 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
     return res.status(statusCodes.BAD_REQUEST).json({
       success: false,
       message: "All emails must be updated to move lead to Verifier",
-      missingCount
+      missingCount,
     });
   }
 
@@ -120,48 +140,64 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
   });
 });
 
-// 3) POST /api/verifier/leads/:leadId/move-to-lq
-// Logic: Assigns the lead to an LQ user via Round-Robin and moves stage to "LQ"
-let moveLeadToLeadQualifiers = asyncHandler(async function (req, res, next) {
-  let leadId = req.params.leadId;
+// 3) POST /api/verifier/leads/move-all-to-lq
+// Logic: Move ALL leads in Verifier stage to LQ stage using optimized bulk operations
+let moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
+  // 1. Get all leads in Verifier stage
+  let leads = await Lead.find({ stage: "Verifier" }).select("_id");
+  if (leads.length === 0)
+    return next(httpError(statusCodes.NOT_FOUND, "No leads to move"));
 
-  if (!isValidObjectId(leadId)) {
-    return next(httpError(statusCodes.BAD_REQUEST, "Invalid leadId"));
-  }
+  // 2. Fetch all LQs once (Don't call assignmentService inside the loop)
+  let lqs = await User.find({ role: "Lead Qualifiers", status: "APPROVED" })
+    .select("_id")
+    .sort({ _id: 1 });
+  if (lqs.length === 0)
+    return next(httpError(statusCodes.BAD_REQUEST, "No LQs available"));
 
-  let lead = await Lead.findById(leadId);
-  if (!lead) return next(httpError(statusCodes.NOT_FOUND, "Lead not found"));
+  // 3. Get the starting point for Round-Robin from your Counter
+  let counter = await Counter.findOneAndUpdate(
+    { key: "LQ_ASSIGN" },
+    { $inc: { seq: leads.length } }, // Increment by the total number of leads at once
+    { new: true, upsert: true },
+  );
 
-  // This API strictly requires the lead to have passed the "Verifier" step
-  if (lead.stage !== "Verifier") {
-    return next(httpError(statusCodes.CONFLICT, "Lead must be in Verifier stage to move to LQ"));
-  }
-
-  // Trigger Round-Robin Assignment Service
-  let nextLq = await assignmentService.getNextLeadQualifier();
-  if (!nextLq) {
-    return next(httpError(statusCodes.BAD_REQUEST, "No Lead Qualifiers (APPROVED) available"));
-  }
-
+  let startSeq = counter.seq - leads.length;
   let now = new Date();
-  lead.stage = "LQ";
-  lead.assignedTo = nextLq._id;
-  lead.assignedToRole = "Lead Qualifiers";
-  lead.assignedAt = now;
-  lead.verifiedCompletedAt = now;
 
-  await lead.save();
+  // 4. Prepare Bulk Operations
+  let bulkOps = leads.map((lead, index) => {
+    let lqIndex = (startSeq + index) % lqs.length;
+    let assignedLqId = lqs[lqIndex]._id;
+
+    return {
+      updateOne: {
+        filter: { _id: lead._id },
+        update: {
+          $set: {
+            stage: "LQ",
+            assignedTo: assignedLqId,
+            assignedToRole: "Lead Qualifiers",
+            assignedAt: now,
+            verifiedCompletedAt: now,
+          },
+        },
+      },
+    };
+  });
+
+  // 5. Execute everything in ONE database command
+  await Lead.bulkWrite(bulkOps);
 
   return res.status(statusCodes.OK).json({
     success: true,
-    message: "Lead successfully assigned to LQ via Round-Robin.",
-    assignedTo: nextLq._id,
-    stage: lead.stage
+    message: `${leads.length} leads successfully distributed.`,
+    count: leads.length,
   });
 });
 
 module.exports = {
   getDmLeads,
   updateEmailStatuses,
-  moveLeadToLeadQualifiers,
+  moveAllVerifierLeadsToLQ,
 };
