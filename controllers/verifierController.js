@@ -15,6 +15,7 @@ function isValidObjectId(id) {
 }
 
 // 1) GET /api/verifier/leads
+// Logic: Strictly get only leads in "DM" stage
 let getDmLeads = asyncHandler(async function (req, res, next) {
   let limit = parseInt(req.query.limit || "20", 10);
   let skip = parseInt(req.query.skip || "0", 10);
@@ -23,11 +24,11 @@ let getDmLeads = asyncHandler(async function (req, res, next) {
   if (limit > 100) limit = 100;
   if (isNaN(skip) || skip < 0) skip = 0;
 
-  let leads = await Lead.find({ stage: "Verifier" })
+  let leads = await Lead.find({ stage: "DM" })
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(limit)
-    .select("name emails submittedDate submittedTime ");
+    .select("emails submittedDate stage");
 
   return res.status(statusCodes.OK).json({
     success: true,
@@ -36,7 +37,7 @@ let getDmLeads = asyncHandler(async function (req, res, next) {
 });
 
 // 2) POST /api/verifier/leads/:leadId/update-emails
-// body: { emails: [{ normalized, status }] }
+// Logic: Processes emails AND handles phone-only leads to move stage to "Verifier"
 let updateEmailStatuses = asyncHandler(async function (req, res, next) {
   let leadId = req.params.leadId;
 
@@ -44,79 +45,83 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
     return next(httpError(statusCodes.BAD_REQUEST, "Invalid leadId"));
   }
 
-  let emails = Array.isArray(req.body && req.body.emails)
-    ? req.body.emails
-    : [];
-  if (!emails.length) {
-    return next(httpError(statusCodes.BAD_REQUEST, "emails array is required"));
-  }
-
-  let lead = await Lead.findById(leadId);
+  let lead = await Lead.findById(leadId).select("stage emails");
   if (!lead) return next(httpError(statusCodes.NOT_FOUND, "Lead not found"));
 
+  // Only allow updates if the lead is in DM stage
   if (lead.stage !== "DM") {
-    return next(httpError(statusCodes.BAD_REQUEST, "Lead is not in DM stage"));
+    return next(httpError(statusCodes.BAD_REQUEST, "Status can only be updated once while in DM stage"));
   }
 
-  // If lead has no emails, verifier can't update anything (but lead can still move to LQ later)
-  if (!Array.isArray(lead.emails) || lead.emails.length === 0) {
-    return next(
-      httpError(statusCodes.BAD_REQUEST, "This lead has no emails to update"),
-    );
-  }
+  let hasEmails = Array.isArray(lead.emails) && lead.emails.length > 0;
 
-  // Build lookup map from existing lead emails (normalized => index)
-  let idxMap = new Map();
-  for (let i = 0; i < lead.emails.length; i++) {
-    let n = String(lead.emails[i].normalized || "")
-      .trim()
-      .toLowerCase();
-    if (n) idxMap.set(n, i);
-  }
-
-  let updatedCount = 0;
-  let ignoredCount = 0;
-  let now = new Date();
-
-  for (let i = 0; i < emails.length; i++) {
-    let incoming = emails[i] || {};
-    let norm = String(incoming.normalized || "")
-      .trim()
-      .toLowerCase();
-    let status = String(incoming.status || "")
-      .trim()
-      .toUpperCase();
-
-    if (!norm || !isValidEmailStatus(status)) {
-      ignoredCount++;
-      continue;
-    }
-
-    let idx = idxMap.get(norm);
-    if (idx === undefined) {
-      ignoredCount++;
-      continue;
-    }
-
-    // update
+  // CASE A: Lead has NO emails (Phone-only)
+  if (!hasEmails) {
     lead.stage = "Verifier";
-    lead.emails[idx].status = status;
-    lead.emails[idx].verifiedBy = req.user.id;
-    lead.emails[idx].verifiedAt = now;
+    await lead.save();
+    return res.status(statusCodes.OK).json({
+      success: true,
+      message: "Phone-only lead moved to Verifier stage.",
+      stage: lead.stage,
+    });
+  }
+
+  // CASE B: Lead HAS emails
+  let incomingArr = Array.isArray(req.body && req.body.emails) ? req.body.emails : [];
+  if (!incomingArr.length) {
+    return next(httpError(statusCodes.BAD_REQUEST, "Email data is required for this lead"));
+  }
+
+  let incomingMap = new Map();
+  for (let row of incomingArr) {
+    let norm = String(row.normalized || "").trim().toLowerCase();
+    let status = String(row.status || "").trim().toUpperCase();
+    if (norm && isValidEmailStatus(status)) {
+      incomingMap.set(norm, status);
+    }
+  }
+
+  let now = new Date();
+  let updatedCount = 0;
+  let missingCount = 0;
+
+  for (let e of lead.emails) {
+    let norm = String(e.normalized || "").trim().toLowerCase();
+    let nextStatus = incomingMap.get(norm);
+
+    if (!nextStatus) {
+      missingCount++;
+      continue;
+    }
+
+    e.status = nextStatus;
+    e.verifiedBy = req.user.id;
+    e.verifiedAt = now;
     updatedCount++;
   }
 
+  // Enforce that ALL emails must be updated before the lead can hit the "Verifier" stage
+  if (missingCount > 0) {
+    return res.status(statusCodes.BAD_REQUEST).json({
+      success: false,
+      message: "All emails must be updated to move lead to Verifier",
+      missingCount
+    });
+  }
+
+  lead.stage = "Verifier";
   await lead.save();
 
   return res.status(statusCodes.OK).json({
     success: true,
-    message: "Email statuses updated",
-    updatedCount: updatedCount,
-    ignoredCount: ignoredCount,
+    message: "Lead moved to Verifier stage.",
+    updatedCount,
+    stage: lead.stage,
   });
 });
 
 // 3) POST /api/verifier/leads/:leadId/move-to-lq
+// Logic: Assigns the lead to an LQ user via Round-Robin and moves stage to "LQ"
 let moveLeadToLeadQualifiers = asyncHandler(async function (req, res, next) {
   let leadId = req.params.leadId;
 
@@ -127,41 +132,18 @@ let moveLeadToLeadQualifiers = asyncHandler(async function (req, res, next) {
   let lead = await Lead.findById(leadId);
   if (!lead) return next(httpError(statusCodes.NOT_FOUND, "Lead not found"));
 
+  // This API strictly requires the lead to have passed the "Verifier" step
   if (lead.stage !== "Verifier") {
-    return next(
-      httpError(statusCodes.CONFLICT, "Lead is not in Verifier stage"),
-    );
+    return next(httpError(statusCodes.CONFLICT, "Lead must be in Verifier stage to move to LQ"));
   }
 
-  // DM can submit phone-only leads. For those, verifier shouldn't block move.
-  let hasEmails = Array.isArray(lead.emails) && lead.emails.length > 0;
-
-  if (hasEmails) {
-    let allEmailsProcessed = lead.emails.every(function (e) {
-      return e && e.status && e.status !== "PENDING";
-    });
-
-    if (!allEmailsProcessed) {
-      return next(
-        httpError(
-          statusCodes.BAD_REQUEST,
-          "All emails must have a status updated before moving",
-        ),
-      );
-    }
-  }
-
-  // If there are no emails, allow moving (phone-only flow)
-
+  // Trigger Round-Robin Assignment Service
   let nextLq = await assignmentService.getNextLeadQualifier();
   if (!nextLq) {
-    return next(
-      httpError(statusCodes.BAD_REQUEST, "No Lead Qualifiers available"),
-    );
+    return next(httpError(statusCodes.BAD_REQUEST, "No Lead Qualifiers (APPROVED) available"));
   }
 
   let now = new Date();
-
   lead.stage = "LQ";
   lead.assignedTo = nextLq._id;
   lead.assignedToRole = "Lead Qualifiers";
@@ -172,9 +154,9 @@ let moveLeadToLeadQualifiers = asyncHandler(async function (req, res, next) {
 
   return res.status(statusCodes.OK).json({
     success: true,
-    message: "Lead moved to Lead Qualifiers",
-    leadId: lead._id,
-    assignedTo: String(nextLq._id),
+    message: "Lead successfully assigned to LQ via Round-Robin.",
+    assignedTo: nextLq._id,
+    stage: lead.stage
   });
 });
 

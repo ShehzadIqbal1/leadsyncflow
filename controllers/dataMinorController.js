@@ -240,7 +240,7 @@ let submitLead = asyncHandler(async function (req, res, next) {
   // 🇵🇰 Pakistan Standard Time
   let pkt = getPktNow();
 
-  // ✅ ONLY ONE SOURCE LINK (store first only)
+  // ONLY ONE SOURCE LINK (store first only)
   let sources = Array.isArray(data.sources) ? data.sources : [];
   let firstSource = sources.length ? [sources[0]] : [];
 
