@@ -34,9 +34,6 @@ app.use("/api/verifier", verifierRoutes);
 app.use("/api/lq", leadQualifierRoutes);
 app.use("/api/manager", managerRoutes);
 
-
-
-
 app.use(errorHandler);
 
 let port = process.env.PORT || 5000;

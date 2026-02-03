@@ -125,7 +125,7 @@ let signup = asyncHandler(async function (req, res, next) {
     sex: data.sex,
     department: data.department,
     // role is assigned on approval
-    
+
     // systemRole default USER
     status: constants.userStatus.PENDING,
     passwordHash: passwordHash,
@@ -152,7 +152,7 @@ let login = asyncHandler(async function (req, res, next) {
   let data = validation.data;
 
   let user = await User.findOne({ email: data.email }).select(
-    "name email passwordHash status role department sex profileImage"
+    "name email passwordHash status role department sex profileImage",
   );
   if (!user)
     return next(httpError(statusCodes.UNAUTHORIZED, "Invalid credentials"));
@@ -160,7 +160,7 @@ let login = asyncHandler(async function (req, res, next) {
   // block login if not approved
   if (user.status !== constants.userStatus.APPROVED) {
     return next(
-      httpError(statusCodes.FORBIDDEN, "Your account is not approved yet")
+      httpError(statusCodes.FORBIDDEN, "Your account is not approved yet"),
     );
   }
 

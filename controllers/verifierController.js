@@ -22,22 +22,29 @@ let getDmLeads = asyncHandler(async function (req, res, next) {
   let limit = parseInt(req.query.limit || "20", 10);
   let skip = parseInt(req.query.skip || "0", 10);
 
+  // Validation
   if (isNaN(limit) || limit < 1) limit = 20;
   if (limit > 100) limit = 100;
   if (isNaN(skip) || skip < 0) skip = 0;
 
-  let leads = await Lead.find({ stage: "DM" })
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(limit)
-    .select("emails submittedDate stage");
+  // Run both queries in parallel for better performance
+  const [leads, totalLeads] = await Promise.all([
+    Lead.find({ stage: "DM" })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .select("emails submittedDate stage"),
+    Lead.countDocuments({ stage: "DM" })
+  ]);
 
   return res.status(statusCodes.OK).json({
     success: true,
-    leads: leads,
+    totalLeads, // Now the frontend knows the "Grand Total"
+    limit,
+    skip,
+    leads,
   });
 });
-
 // 2) POST /api/verifier/leads/:leadId/update-emails
 // Logic: Processes emails AND handles phone-only leads to move stage to "Verifier"
 let updateEmailStatuses = asyncHandler(async function (req, res, next) {
