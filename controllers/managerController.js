@@ -17,8 +17,8 @@ function getPKT() {
     date: now.toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" }),
     time: now.toLocaleTimeString("en-GB", {
       timeZone: "Asia/Karachi",
-      hour12: false
-    })
+      hour12: false,
+    }),
   };
 }
 
@@ -35,23 +35,32 @@ let getMyAssignedLeads = asyncHandler(async function (req, res, next) {
   if (limit > 100) limit = 100;
   if (isNaN(skip) || skip < 0) skip = 0;
 
-  let leads = await Lead.find({
+  // Define the filter object to reuse it for both query and count
+  const filter = {
     assignedTo: managerId,
-    stage: "MANAGER"
-  })
-    .sort({ assignedAt: -1, createdAt: -1 })
-    .skip(skip)
-    .limit(limit)
-    .select(
-      "name location emails phones sources stage status lqStatus comments responseSource assignedAt submittedDate submittedTime createdAt createdBy assignedTo"
-    )
-    .populate("createdBy", "name email role")
-    .populate("assignedTo", "name email role")
-    .populate("comments.createdBy", "name email role");
+    stage: "MANAGER",
+  };
+
+  // Run both queries in parallel for better performance
+  let [leads, totalLeads] = await Promise.all([
+    Lead.find(filter)
+      .sort({ assignedAt: -1, createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .select(
+        "name location emails phones sources stage status lqStatus comments responseSource assignedAt submittedDate submittedTime createdAt createdBy assignedTo",
+      )
+      .populate("createdBy", "name email role")
+      .populate("assignedTo", "name email role")
+      .populate("comments.createdBy", "name email role"),
+    Lead.countDocuments(filter),
+  ]);
 
   return res.status(statusCodes.OK).json({
     success: true,
-    leads: leads
+    totalLeads: totalLeads, // Total count for frontend pagination math
+    count: leads.length, // Number of leads in current batch
+    leads: leads,
   });
 });
 
@@ -90,12 +99,12 @@ let decisionOnLead = asyncHandler(async function (req, res, next) {
   let lead = await Lead.findOne({
     _id: leadId,
     assignedTo: req.user.id,
-    stage: "MANAGER"
+    stage: "MANAGER",
   });
 
   if (!lead) {
     return next(
-      httpError(statusCodes.NOT_FOUND, "Lead not found / not assigned to you")
+      httpError(statusCodes.NOT_FOUND, "Lead not found / not assigned to you"),
     );
   }
 
@@ -107,7 +116,7 @@ let decisionOnLead = asyncHandler(async function (req, res, next) {
     createdByRole: "Manager",
     createdAt: pkt.now,
     createdDate: pkt.date,
-    createdTime: pkt.time
+    createdTime: pkt.time,
   });
 
   // outcome stage
@@ -118,9 +127,11 @@ let decisionOnLead = asyncHandler(async function (req, res, next) {
   return res.status(statusCodes.OK).json({
     success: true,
     message:
-      "Lead " + (decision === "REJECT" ? "rejected" : "accepted") + " successfully",
+      "Lead " +
+      (decision === "REJECT" ? "rejected" : "accepted") +
+      " successfully",
     stage: lead.stage,
-    status: lead.status
+    status: lead.status,
   });
 });
 
@@ -149,12 +160,12 @@ let addManagerComment = asyncHandler(async function (req, res, next) {
   let lead = await Lead.findOne({
     _id: leadId,
     assignedTo: req.user.id,
-    stage: "MANAGER"
+    stage: "MANAGER",
   });
 
   if (!lead) {
     return next(
-      httpError(statusCodes.NOT_FOUND, "Lead not found / not assigned to you")
+      httpError(statusCodes.NOT_FOUND, "Lead not found / not assigned to you"),
     );
   }
 
@@ -166,7 +177,7 @@ let addManagerComment = asyncHandler(async function (req, res, next) {
     createdByRole: "Manager",
     createdAt: pkt.now,
     createdDate: pkt.date,
-    createdTime: pkt.time
+    createdTime: pkt.time,
   });
 
   await lead.save();
@@ -174,7 +185,7 @@ let addManagerComment = asyncHandler(async function (req, res, next) {
   return res.status(statusCodes.OK).json({
     success: true,
     message: "Comment added",
-    commentsCount: lead.comments.length
+    commentsCount: lead.comments.length,
   });
 });
 
@@ -202,12 +213,12 @@ let updatePaymentStatus = asyncHandler(async function (req, res, next) {
   let lead = await Lead.findOne({
     _id: leadId,
     assignedTo: req.user.id,
-    stage: "MANAGER"
+    stage: "MANAGER",
   });
 
   if (!lead) {
     return next(
-      httpError(statusCodes.NOT_FOUND, "Lead not found / not assigned to you")
+      httpError(statusCodes.NOT_FOUND, "Lead not found / not assigned to you"),
     );
   }
 
@@ -216,7 +227,7 @@ let updatePaymentStatus = asyncHandler(async function (req, res, next) {
     return res.status(statusCodes.OK).json({
       success: true,
       message: "Lead already marked as PAID",
-      status: lead.status
+      status: lead.status,
     });
   }
 
@@ -226,7 +237,7 @@ let updatePaymentStatus = asyncHandler(async function (req, res, next) {
   return res.status(statusCodes.OK).json({
     success: true,
     message: "Lead marked as PAID",
-    status: lead.status
+    status: lead.status,
   });
 });
 
@@ -234,5 +245,5 @@ module.exports = {
   getMyAssignedLeads: getMyAssignedLeads,
   decisionOnLead: decisionOnLead,
   addManagerComment: addManagerComment,
-  updatePaymentStatus: updatePaymentStatus
+  updatePaymentStatus: updatePaymentStatus,
 };

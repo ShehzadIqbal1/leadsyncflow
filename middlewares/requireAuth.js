@@ -20,8 +20,6 @@ module.exports = function requireAuth(req, res, next) {
     return next(httpError(statusCodes.UNAUTHORIZED, "Not authenticated"));
 
   try {
-    console.log("AUTH HEADER:", req.headers.authorization);
-
     let decoded = tokenService.verifyAuthToken(token);
     req.user = { id: decoded.id };
     return next();
@@ -32,8 +30,8 @@ module.exports = function requireAuth(req, res, next) {
       return next(
         httpError(
           statusCodes.UNAUTHORIZED,
-          "Session expired, please login again"
-        )
+          "Session expired, please login again",
+        ),
       );
     }
 
