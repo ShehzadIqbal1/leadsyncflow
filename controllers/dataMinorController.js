@@ -244,19 +244,23 @@ let submitLead = asyncHandler(async function (req, res, next) {
   let sources = Array.isArray(data.sources) ? data.sources : [];
   let firstSource = sources.length ? [sources[0]] : [];
 
-  let lead = await Lead.create({
-    name: data.name,
-    location: data.location || "",
-    emails: emailObjects,
-    phones: data.phones,
-    phonesNormalized: data.phonesNormalized,
-    sources: firstSource,
-    stage: "DM",
-    status: "UNPAID",
-    submittedDate: pkt.pktDate,
-    submittedTime: pkt.pktTime,
-    createdBy: req.user.id,
-  });
+ let lead = await Lead.create({
+  name: data.name,
+  location: data.location || "",
+  emails: emailObjects,
+  phones: data.phones,
+  phonesNormalized: data.phonesNormalized,
+  sources: firstSource,
+
+  //stage logic:
+  stage: emailObjects.length > 0 ? "DM" : "Verifier",
+
+  status: "UNPAID",
+  submittedDate: pkt.pktDate,
+  submittedTime: pkt.pktTime,
+  createdBy: req.user.id,
+});
+
 
   return res.status(statusCodes.CREATED).json({
     success: true,

@@ -54,53 +54,30 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
     return next(httpError(statusCodes.BAD_REQUEST, "Invalid leadId"));
   }
 
+  // We only fetch leads that ARE in DM stage and HAVE emails
   let lead = await Lead.findById(leadId).select("stage emails");
   if (!lead) return next(httpError(statusCodes.NOT_FOUND, "Lead not found"));
 
-  // Only allow updates if the lead is in DM stage
   if (lead.stage !== "DM") {
-    return next(
-      httpError(
-        statusCodes.BAD_REQUEST,
-        "Status can only be updated once while in DM stage",
-      ),
-    );
+    return next(httpError(statusCodes.BAD_REQUEST, "Lead is not in DM stage"));
   }
 
+  // Since you fixed the submit logic, a DM lead should always have emails.
+  // This is now a safety check.
   let hasEmails = Array.isArray(lead.emails) && lead.emails.length > 0;
-
-  // CASE A: Lead has NO emails (Phone-only)
   if (!hasEmails) {
-    lead.stage = "Verifier";
-    await lead.save();
-    return res.status(statusCodes.OK).json({
-      success: true,
-      message: "Phone-only lead moved to Verifier stage.",
-      stage: lead.stage,
-    });
+    return next(httpError(statusCodes.BAD_REQUEST, "This lead has no emails to verify. It should already be in Verifier stage."));
   }
 
-  // CASE B: Lead HAS emails
-  let incomingArr = Array.isArray(req.body && req.body.emails)
-    ? req.body.emails
-    : [];
+  let incomingArr = Array.isArray(req.body && req.body.emails) ? req.body.emails : [];
   if (!incomingArr.length) {
-    return next(
-      httpError(
-        statusCodes.BAD_REQUEST,
-        "Email data is required for this lead",
-      ),
-    );
+    return next(httpError(statusCodes.BAD_REQUEST, "Email data is required"));
   }
 
   let incomingMap = new Map();
   for (let row of incomingArr) {
-    let norm = String(row.normalized || "")
-      .trim()
-      .toLowerCase();
-    let status = String(row.status || "")
-      .trim()
-      .toUpperCase();
+    let norm = String(row.normalized || "").trim().toLowerCase();
+    let status = String(row.status || "").trim().toUpperCase();
     if (norm && isValidEmailStatus(status)) {
       incomingMap.set(norm, status);
     }
@@ -111,9 +88,7 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
   let missingCount = 0;
 
   for (let e of lead.emails) {
-    let norm = String(e.normalized || "")
-      .trim()
-      .toLowerCase();
+    let norm = String(e.normalized || "").trim().toLowerCase();
     let nextStatus = incomingMap.get(norm);
 
     if (!nextStatus) {
@@ -127,7 +102,7 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
     updatedCount++;
   }
 
-  // Enforce that ALL emails must be updated before the lead can hit the "Verifier" stage
+  // Ensure ALL emails are processed before moving stage
   if (missingCount > 0) {
     return res.status(statusCodes.BAD_REQUEST).json({
       success: false,
@@ -141,7 +116,7 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
 
   return res.status(statusCodes.OK).json({
     success: true,
-    message: "Lead moved to Verifier stage.",
+    message: "Lead successfully verified and moved to Verifier stage.",
     updatedCount,
     stage: lead.stage,
   });
