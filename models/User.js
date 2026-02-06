@@ -15,7 +15,7 @@ let userSchema = new mongoose.Schema(
 
     sex: { type: String, required: true, enum: constants.sexOptions },
 
-    department: { type: String,  enum: constants.departments },
+    department: { type: String, enum: constants.departments },
 
     // ROLE is assigned ONLY when approved
     // Includes "Super Admin"
@@ -46,8 +46,14 @@ let userSchema = new mongoose.Schema(
     },
 
     approvedAt: { type: Date, default: null },
+
+    reportsTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null, // will point to a Manager user
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 /**
@@ -58,7 +64,9 @@ userSchema.index(
   {
     expireAfterSeconds: 60 * 60 * 24,
     partialFilterExpression: { status: "PENDING" },
-  }
+  },
 );
+
+userSchema.index({ role: 1, status: 1, reportsTo: 1 });
 
 module.exports = mongoose.model("User", userSchema);

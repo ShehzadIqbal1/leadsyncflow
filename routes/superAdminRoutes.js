@@ -61,5 +61,35 @@ router.delete(
   superAdminController.rejectRequest
 );
 
+// --- Manager + LQ assignment APIs ---
+router.get(
+  "/managers",
+  requireAuth,
+  requireRole(["Super Admin", "Admin"]),
+  superAdminController.getManagers
+);
+
+router.get(
+  "/lead-qualifiers",
+  requireAuth,
+  requireRole(["Super Admin", "Admin"]),
+  superAdminController.getLeadQualifiers
+);
+
+router.patch(
+  "/managers/:managerId/assign-lqs",
+  requireAuth,
+  requireRole(["Super Admin", "Admin"]),
+  superAdminController.assignLqsToManager
+);
+
+router.patch(
+  "/lead-qualifiers/unassign",
+  requireAuth,
+  requireRole(["Super Admin", "Admin"]),
+  superAdminController.unassignLqs
+);
+
+
 // Single export for the entire router
 module.exports = router;

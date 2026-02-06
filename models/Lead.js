@@ -6,7 +6,7 @@ let SourceSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     link: { type: String, required: true, trim: true },
   },
-  { _id: false }
+  { _id: false },
 );
 
 let EmailSchema = new mongoose.Schema(
@@ -21,7 +21,7 @@ let EmailSchema = new mongoose.Schema(
     verifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     verifiedAt: { type: Date },
   },
-  { _id: false }
+  { _id: false },
 );
 
 let CommentSchema = new mongoose.Schema(
@@ -34,27 +34,30 @@ let CommentSchema = new mongoose.Schema(
     },
     createdByRole: { type: String, default: "" },
     createdAt: { type: Date, default: Date.now },
-    createdDate: { type: String, default: "" }, // PKT date string
-    createdTime: { type: String, default: "" }, // PKT time string
+    createdDate: { type: String, default: "" },
+    createdTime: { type: String, default: "" },
   },
-  { _id: false }
+  { _id: false },
 );
 
-let ResponseSourceSchema = new mongoose.Schema(
+let ResponsePickSchema = new mongoose.Schema(
   {
-    type: {
-      type: String,
-      enum: ["EMAIL", "PHONE"],
-      default: undefined, // set by LQ only (do not auto-set at DM stage)
-    },
-    value: { type: String, trim: true, default: "" }, // raw selected email/phone
-    normalized: { type: String, trim: true, default: "" }, // normalized selected email/phone
+    value: { type: String, trim: true, default: "" },
+    normalized: { type: String, trim: true, default: "" },
     selectedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     selectedAt: { type: Date },
     selectedDate: { type: String, default: "" },
     selectedTime: { type: String, default: "" },
   },
-  { _id: false }
+  { _id: false },
+);
+
+let ResponseSourceSchema = new mongoose.Schema(
+  {
+    email: { type: ResponsePickSchema, default: undefined },
+    phone: { type: ResponsePickSchema, default: undefined },
+  },
+  { _id: false },
 );
 
 let LeadSchema = new mongoose.Schema(
@@ -104,7 +107,7 @@ let LeadSchema = new mongoose.Schema(
       required: true,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // --------------------

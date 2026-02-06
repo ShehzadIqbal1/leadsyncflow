@@ -5,40 +5,28 @@ let requireAuth = require("../middlewares/requireAuth");
 let requireRole = require("../middlewares/requireRole");
 let lqController = require("../controllers/leadQualifierController");
 
-// LQ dropdown data: managers list
-router.get(
-  "/managers",
-  requireAuth,
-  requireRole("Lead Qualifiers", "Super Admin", "Admin"),
-  lqController.getManagersList
-);
-
+// LQ leads list
 router.get(
   "/leads",
   requireAuth,
-  requireRole(["Lead Qualifiers","Admin"]),
+  requireRole(["Lead Qualifiers", "Admin", "Super Admin"]),
   lqController.getMyLeads
 );
 
+// Update LQ status
 router.patch(
   "/leads/:leadId/status",
   requireAuth,
-  requireRole(["Lead Qualifiers", "Admin"]),
+  requireRole(["Lead Qualifiers", "Admin", "Super Admin"]),
   lqController.updateLqStatus
 );
 
+// Add comment
 router.post(
   "/leads/:leadId/comment",
   requireAuth,
-  requireRole(["Lead Qualifiers", "Admin"]),
+  requireRole(["Lead Qualifiers", "Admin", "Super Admin"]),
   lqController.addComment
-);
-
-router.post(
-  "/leads/:leadId/assign-manager",
-  requireAuth,
-  requireRole(["Lead Qualifiers", "Admin"]),
-  lqController.assignToManager
 );
 
 module.exports = router;
