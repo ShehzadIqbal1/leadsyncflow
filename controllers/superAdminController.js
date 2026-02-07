@@ -336,51 +336,113 @@ let rejectRequest = asyncHandler(async function (req, res, next) {
     .json({ success: true, message: "User rejected and deleted" });
 });
 
-// --------------------------------------------------
-// Super Admin specific endpoints for managing Lead Qualifiers and their manager assignments
-// GET /api/superadmin/managers
-// --------------------------------------------------
-let getManagers = asyncHandler(async function (req, res, next) {
-  let managers = await User.find({
-    role: "Manager",
-    status: constants.userStatus.APPROVED
-  })
-    .select("_id name email department role")
-    .sort({ name: 1 });
+// ==================================================
+// 1️⃣ GET managers WITH assigned Lead Qualifiers
+// ==================================================
+// GET /api/superadmin/managers/with-lqs
+let getManagersWithLQs = asyncHandler(async function (req, res) {
+  let managers = await User.aggregate([
+    {
+      $match: {
+        role: "Manager",
+        status: constants.userStatus.APPROVED
+      }
+    },
+    {
+      $lookup: {
+        from: "users",
+        localField: "_id",
+        foreignField: "reportsTo",
+        as: "assignedLQs"
+      }
+    },
+    {
+      $match: {
+        "assignedLQs.0": { $exists: true }
+      }
+    },
+    {
+      $project: {
+        _id: 1,
+        name: 1,
+        email: 1,
+        department: 1,
+        assignedLQs: {
+          _id: 1,
+          name: 1,
+          email: 1,
+          department: 1
+        }
+      }
+    },
+    { $sort: { name: 1 } }
+  ]);
 
   return res.status(statusCodes.OK).json({
     success: true,
-    managers: managers.map((m) => ({
-      id: m._id,
-      name: m.name,
-      email: m.email,
-      department: m.department,
-      role: m.role
-    }))
+    managers
   });
 });
 
-// --------------------------------------------------
-// GET /api/superadmin/lead-qualifiers?managerId=...
-// --------------------------------------------------
-let getLeadQualifiers = asyncHandler(async function (req, res, next) {
-  let managerId = String(req.query.managerId || "").trim();
+// ==================================================
+// 2️⃣ GET managers WITHOUT assigned Lead Qualifiers
+// ==================================================
+// GET /api/superadmin/managers/without-lqs
+let getManagersWithoutLQs = asyncHandler(async function (req, res) {
+  let managers = await User.aggregate([
+    {
+      $match: {
+        role: "Manager",
+        status: constants.userStatus.APPROVED
+      }
+    },
+    {
+      $lookup: {
+        from: "users",
+        localField: "_id",
+        foreignField: "reportsTo",
+        as: "assignedLQs"
+      }
+    },
+    {
+      $match: {
+        $or: [
+          { assignedLQs: { $size: 0 } },
+          { assignedLQs: { $exists: false } }
+        ]
+      }
+    },
+    {
+      $project: {
+        _id: 1,
+        name: 1,
+        email: 1,
+        department: 1
+      }
+    },
+    { $sort: { name: 1 } }
+  ]);
 
-  let query = {
+  return res.status(statusCodes.OK).json({
+    success: true,
+    managers
+  });
+});
+
+// ==================================================
+// 3️⃣ GET Lead Qualifiers NOT assigned to any manager
+// ==================================================
+// GET /api/superadmin/lead-qualifiers/unassigned
+let getUnassignedLeadQualifiers = asyncHandler(async function (req, res) {
+  let lqs = await User.find({
     role: "Lead Qualifiers",
-    status: constants.userStatus.APPROVED
-  };
-
-  if (managerId) {
-    if (!isValidObjectId(managerId)) {
-      return next(httpError(statusCodes.BAD_REQUEST, "Invalid managerId"));
-    }
-    query.reportsTo = managerId;
-  }
-
-  let lqs = await User.find(query)
-    .select("_id name email department role reportsTo")
-    .populate("reportsTo", "name email role")
+    status: constants.userStatus.APPROVED,
+    $or: [
+      { reportsTo: null },
+      { reportsTo: { $exists: false } }
+    ]
+  })
+    .select("_id name email department role")
     .sort({ name: 1 });
 
   return res.status(statusCodes.OK).json({
@@ -390,19 +452,16 @@ let getLeadQualifiers = asyncHandler(async function (req, res, next) {
       name: u.name,
       email: u.email,
       department: u.department,
-      role: u.role,
-      reportsTo: u.reportsTo
-        ? { id: u.reportsTo._id, name: u.reportsTo.name, email: u.reportsTo.email }
-        : null
+      role: u.role
     }))
   });
 });
 
-// --------------------------------------------------
+// ==================================================
+// 4️⃣ ASSIGN Lead Qualifiers → Manager (bulk)
+// ==================================================
 // PATCH /api/superadmin/managers/:managerId/assign-lqs
 // body: { lqIds: [] }
-// Assign MANY LQs to ONE manager (bulk)
-// --------------------------------------------------
 let assignLqsToManager = asyncHandler(async function (req, res, next) {
   let managerId = req.params.managerId;
 
@@ -410,14 +469,13 @@ let assignLqsToManager = asyncHandler(async function (req, res, next) {
     return next(httpError(statusCodes.BAD_REQUEST, "Invalid managerId"));
   }
 
-  let lqIds = Array.isArray(req.body && req.body.lqIds) ? req.body.lqIds : [];
-  lqIds = lqIds.map((x) => String(x || "").trim()).filter(Boolean);
+  let lqIds = Array.isArray(req.body?.lqIds) ? req.body.lqIds : [];
+  lqIds = lqIds.map(String).filter(Boolean);
 
   if (!lqIds.length) {
     return next(httpError(statusCodes.BAD_REQUEST, "lqIds array is required"));
   }
 
-  // verify manager
   let manager = await User.findOne({
     _id: managerId,
     role: "Manager",
@@ -425,43 +483,34 @@ let assignLqsToManager = asyncHandler(async function (req, res, next) {
   }).select("_id");
 
   if (!manager) {
-    return next(httpError(statusCodes.BAD_REQUEST, "Manager not found / not approved"));
+    return next(httpError(statusCodes.BAD_REQUEST, "Manager not found"));
   }
-
-  // verify LQs exist
-  let validLqs = await User.find({
-    _id: { $in: lqIds },
-    role: "Lead Qualifiers",
-    status: constants.userStatus.APPROVED
-  }).select("_id");
-
-  if (!validLqs.length) {
-    return next(httpError(statusCodes.BAD_REQUEST, "No valid Lead Qualifiers found"));
-  }
-
-  let validIds = validLqs.map((u) => u._id);
 
   let result = await User.updateMany(
-    { _id: { $in: validIds } },
+    {
+      _id: { $in: lqIds },
+      role: "Lead Qualifiers",
+      status: constants.userStatus.APPROVED
+    },
     { $set: { reportsTo: manager._id } }
   );
 
   return res.status(statusCodes.OK).json({
     success: true,
     message: "Lead Qualifiers assigned to manager",
-    managerId: String(manager._id),
-    assignedCount: result.modifiedCount || result.nModified || 0
+    managerId,
+    assignedCount: result.modifiedCount || 0
   });
 });
 
-// --------------------------------------------------
+// ==================================================
+// UNASSIGN Lead Qualifiers from managers
+// ==================================================
 // PATCH /api/superadmin/lead-qualifiers/unassign
 // body: { lqIds: [] }
-// Remove manager mapping from LQs
-// --------------------------------------------------
 let unassignLqs = asyncHandler(async function (req, res, next) {
-  let lqIds = Array.isArray(req.body && req.body.lqIds) ? req.body.lqIds : [];
-  lqIds = lqIds.map((x) => String(x || "").trim()).filter(Boolean);
+  let lqIds = Array.isArray(req.body?.lqIds) ? req.body.lqIds : [];
+  lqIds = lqIds.map(String).filter(Boolean);
 
   if (!lqIds.length) {
     return next(httpError(statusCodes.BAD_REQUEST, "lqIds array is required"));
@@ -473,15 +522,25 @@ let unassignLqs = asyncHandler(async function (req, res, next) {
       role: "Lead Qualifiers",
       status: constants.userStatus.APPROVED
     },
-    { $set: { reportsTo: null } }
+    { $unset: { reportsTo: "" } }
   );
 
   return res.status(statusCodes.OK).json({
     success: true,
-    message: "Lead Qualifiers unassigned from manager",
-    unassignedCount: result.modifiedCount || result.nModified || 0
+    message: "Lead Qualifiers unassigned",
+    unassignedCount: result.modifiedCount || 0
   });
 });
+
+// ----------------------------------
+module.exports = {
+  getManagersWithLQs,
+  getManagersWithoutLQs,
+  getUnassignedLeadQualifiers,
+  assignLqsToManager,
+  unassignLqs
+};
+
 
 // --- Final Export ---
 module.exports = {
@@ -491,8 +550,9 @@ module.exports = {
   getPendingRequests,
   approveRequest,
   rejectRequest,
-  getManagers,
-  getLeadQualifiers,
-  assignLqsToManager,
-  unassignLqs
+ getManagersWithLQs,
+ getManagersWithoutLQs,
+ getUnassignedLeadQualifiers,
+ assignLqsToManager,
+ unassignLqs
 };

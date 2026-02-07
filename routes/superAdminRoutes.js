@@ -61,21 +61,31 @@ router.delete(
   superAdminController.rejectRequest
 );
 
-// --- Manager + LQ assignment APIs ---
+// Managers WITH assigned LQs (for unassign screen)
 router.get(
-  "/managers",
+  "/managers/with-lqs",
   requireAuth,
   requireRole(["Super Admin", "Admin"]),
-  superAdminController.getManagers
+  superAdminController.getManagersWithLQs
 );
 
+// Managers WITHOUT assigned LQs (for assign screen)
 router.get(
-  "/lead-qualifiers",
+  "/managers/without-lqs",
   requireAuth,
   requireRole(["Super Admin", "Admin"]),
-  superAdminController.getLeadQualifiers
+  superAdminController.getManagersWithoutLQs
 );
 
+// Unassigned Lead Qualifiers (assignment pool)
+router.get(
+  "/lead-qualifiers/unassigned",
+  requireAuth,
+  requireRole(["Super Admin", "Admin"]),
+  superAdminController.getUnassignedLeadQualifiers
+);
+
+// Assign LQs → Manager
 router.patch(
   "/managers/:managerId/assign-lqs",
   requireAuth,
@@ -83,13 +93,13 @@ router.patch(
   superAdminController.assignLqsToManager
 );
 
+// Unassign LQs
 router.patch(
   "/lead-qualifiers/unassign",
   requireAuth,
   requireRole(["Super Admin", "Admin"]),
   superAdminController.unassignLqs
 );
-
 
 // Single export for the entire router
 module.exports = router;
