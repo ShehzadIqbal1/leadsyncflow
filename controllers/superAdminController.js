@@ -195,7 +195,7 @@ let getOverview = asyncHandler(async function (req, res, next) {
   });
 });
 
-// GET /api/superadmin/leads
+
 // GET /api/superadmin/leads
 let getAllLeads = asyncHandler(async function (req, res, next) {
   let limit = Math.min(parseInt(req.query.limit || "20", 10), 100);
@@ -207,7 +207,7 @@ let getAllLeads = asyncHandler(async function (req, res, next) {
   if (req.query.lqStatus) filter.lqStatus = req.query.lqStatus.trim();
   if (req.query.assignedTo) filter.assignedTo = req.query.assignedTo.trim();
 
-  // 1. Fetch the Leads
+  // 1. Fetch the paginated leads
   let leads = await Lead.find(filter)
     .sort({ updatedAt: -1 })
     .skip(skip)
@@ -216,23 +216,49 @@ let getAllLeads = asyncHandler(async function (req, res, next) {
     .populate("assignedTo", "name email role")
     .populate("lqUpdatedBy", "name email role");
 
-  // 2. Fetch specific counts
-  // 'combinedTotal' counts DM, Verifier, and LQ
-  // 'managerTotal' counts only Manager
-  const [combinedTotal, managerTotal] = await Promise.all([
-    Lead.countDocuments({ stage: { $in: ["DM", "Verifier", "LQ"] } }),
-    Lead.countDocuments({ stage: "Manager" })
+  // 2. Fetch all counts in a single aggregation call
+  const stats = await Lead.aggregate([
+    { $match: {} }, 
+    {
+      $facet: {
+        dmCount: [{ $match: { stage: "DM" } }, { $count: "count" }],
+        verifierCount: [{ $match: { stage: "Verifier" } }, { $count: "count" }],
+        lqCount: [{ $match: { stage: "LQ" } }, { $count: "count" }],
+        managerCount: [{ $match: { stage: "Manager" } }, { $count: "count" }],
+      },
+    },
   ]);
+
+  // Extract individual counts
+  const dm = stats[0].dmCount[0]?.count || 0;
+  const verifier = stats[0].verifierCount[0]?.count || 0;
+  const lq = stats[0].lqCount[0]?.count || 0;
+  const managerTotal = stats[0].managerCount[0]?.count || 0;
+
+  // Task 1: Combined total of DM, LQ, and Verifier
+  const combinedTotal = dm + verifier + lq;
 
   return res.status(statusCodes.OK).json({
     success: true,
-    total: combinedTotal, // This is now the sum of DM + Verifier + LQ
-    managerTotal: managerTotal, // Separate total for Manager
+    total: combinedTotal, // Total of DM, LQ, Verifier
+    managerTotal: managerTotal, // Task 3: Separate Manager count
+    counts: {
+      // Task 2: Separate counts for the three
+      dm,
+      verifier,
+      lq
+    },
     limit,
     skip,
-    leads
+    leads,
   });
 });
+
+
+
+
+
+
 // GET /api/superadmin/performance
 let getPerformance = asyncHandler(async function (req, res, next) {
   let role = String(req.query.role || "").trim();
