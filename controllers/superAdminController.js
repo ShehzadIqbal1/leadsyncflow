@@ -196,6 +196,7 @@ let getOverview = asyncHandler(async function (req, res, next) {
 });
 
 // GET /api/superadmin/leads
+// GET /api/superadmin/leads
 let getAllLeads = asyncHandler(async function (req, res, next) {
   let limit = Math.min(parseInt(req.query.limit || "20", 10), 100);
   let skip = Math.max(parseInt(req.query.skip || "0", 10), 0);
@@ -206,6 +207,7 @@ let getAllLeads = asyncHandler(async function (req, res, next) {
   if (req.query.lqStatus) filter.lqStatus = req.query.lqStatus.trim();
   if (req.query.assignedTo) filter.assignedTo = req.query.assignedTo.trim();
 
+  // 1. Fetch the Leads
   let leads = await Lead.find(filter)
     .sort({ updatedAt: -1 })
     .skip(skip)
@@ -214,13 +216,23 @@ let getAllLeads = asyncHandler(async function (req, res, next) {
     .populate("assignedTo", "name email role")
     .populate("lqUpdatedBy", "name email role");
 
-  let total = await Lead.countDocuments(filter);
+  // 2. Fetch specific counts
+  // 'combinedTotal' counts DM, Verifier, and LQ
+  // 'managerTotal' counts only Manager
+  const [combinedTotal, managerTotal] = await Promise.all([
+    Lead.countDocuments({ stage: { $in: ["DM", "Verifier", "LQ"] } }),
+    Lead.countDocuments({ stage: "Manager" })
+  ]);
 
-  return res
-    .status(statusCodes.OK)
-    .json({ success: true, total, limit, skip, leads });
+  return res.status(statusCodes.OK).json({
+    success: true,
+    total: combinedTotal, // This is now the sum of DM + Verifier + LQ
+    managerTotal: managerTotal, // Separate total for Manager
+    limit,
+    skip,
+    leads
+  });
 });
-
 // GET /api/superadmin/performance
 let getPerformance = asyncHandler(async function (req, res, next) {
   let role = String(req.query.role || "").trim();
@@ -532,15 +544,6 @@ let unassignLqs = asyncHandler(async function (req, res, next) {
   });
 });
 
-// ----------------------------------
-module.exports = {
-  getManagersWithLQs,
-  getManagersWithoutLQs,
-  getUnassignedLeadQualifiers,
-  assignLqsToManager,
-  unassignLqs
-};
-
 
 // --- Final Export ---
 module.exports = {
@@ -550,9 +553,9 @@ module.exports = {
   getPendingRequests,
   approveRequest,
   rejectRequest,
- getManagersWithLQs,
- getManagersWithoutLQs,
- getUnassignedLeadQualifiers,
- assignLqsToManager,
- unassignLqs
+  getManagersWithLQs,
+  getManagersWithoutLQs,
+  getUnassignedLeadQualifiers,
+  assignLqsToManager,
+  unassignLqs
 };

@@ -4,7 +4,6 @@ let router = express.Router();
 // Middlewares
 let requireAuth = require("../middlewares/requireAuth");
 let requireRole = require("../middlewares/requireRole");
-let requireSuperAdmin = require("../middlewares/requireSuperAdmin");
 
 // Controller
 let superAdminController = require("../controllers/superAdminController");
@@ -101,5 +100,4 @@ router.patch(
   superAdminController.unassignLqs
 );
 
-// Single export for the entire router
 module.exports = router;
