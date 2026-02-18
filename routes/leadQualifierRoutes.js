@@ -29,4 +29,12 @@ router.post(
   lqController.addComment
 );
 
+// Submit to manager
+router.post(
+  "/leads/:leadId/submit-to-manager",
+  requireAuth,
+  requireRole(["Lead Qualifiers", "Admin", "Super Admin"]),
+  lqController.submitToMyManager
+);
+
 module.exports = router;

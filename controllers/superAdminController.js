@@ -78,7 +78,7 @@ let getOverview = asyncHandler(async function (req, res, next) {
     dm_to_lq: pct(totals.lqCount + totals.managerCount, totals.totalLeads),
     lq_to_manager: pct(
       totals.managerCount,
-      totals.lqCount + totals.managerCount
+      totals.lqCount + totals.managerCount,
     ),
     manager_paid: pct(totals.paidCount, totals.managerCount),
   };
@@ -195,7 +195,6 @@ let getOverview = asyncHandler(async function (req, res, next) {
   });
 });
 
-
 // GET /api/superadmin/leads
 let getAllLeads = asyncHandler(async function (req, res, next) {
   let limit = Math.min(parseInt(req.query.limit || "20", 10), 100);
@@ -218,7 +217,7 @@ let getAllLeads = asyncHandler(async function (req, res, next) {
 
   // 2. Fetch all counts in a single aggregation call
   const stats = await Lead.aggregate([
-    { $match: {} }, 
+    { $match: {} },
     {
       $facet: {
         dmCount: [{ $match: { stage: "DM" } }, { $count: "count" }],
@@ -246,18 +245,13 @@ let getAllLeads = asyncHandler(async function (req, res, next) {
       // Task 2: Separate counts for the three
       dm,
       verifier,
-      lq
+      lq,
     },
     limit,
     skip,
     leads,
   });
 });
-
-
-
-
-
 
 // GET /api/superadmin/performance
 let getPerformance = asyncHandler(async function (req, res, next) {
@@ -266,7 +260,7 @@ let getPerformance = asyncHandler(async function (req, res, next) {
     return next(httpError(statusCodes.BAD_REQUEST, "role query is required"));
 
   let users = await User.find({ role: role }).select(
-    "_id name email role status"
+    "_id name email role status",
   );
   let userIds = users.map((u) => u._id);
   let perf = [];
@@ -351,7 +345,7 @@ let approveRequest = asyncHandler(async function (req, res, next) {
       approvedBy: req.user.id,
       approvedAt: new Date(),
     },
-    { new: true }
+    { new: true },
   );
 
   if (!user)
@@ -383,21 +377,21 @@ let getManagersWithLQs = asyncHandler(async function (req, res) {
     {
       $match: {
         role: "Manager",
-        status: constants.userStatus.APPROVED
-      }
+        status: constants.userStatus.APPROVED,
+      },
     },
     {
       $lookup: {
         from: "users",
         localField: "_id",
         foreignField: "reportsTo",
-        as: "assignedLQs"
-      }
+        as: "assignedLQs",
+      },
     },
     {
       $match: {
-        "assignedLQs.0": { $exists: true }
-      }
+        "assignedLQs.0": { $exists: true },
+      },
     },
     {
       $project: {
@@ -409,16 +403,16 @@ let getManagersWithLQs = asyncHandler(async function (req, res) {
           _id: 1,
           name: 1,
           email: 1,
-          department: 1
-        }
-      }
+          department: 1,
+        },
+      },
     },
-    { $sort: { name: 1 } }
+    { $sort: { name: 1 } },
   ]);
 
   return res.status(statusCodes.OK).json({
     success: true,
-    managers
+    managers,
   });
 });
 
@@ -431,39 +425,39 @@ let getManagersWithoutLQs = asyncHandler(async function (req, res) {
     {
       $match: {
         role: "Manager",
-        status: constants.userStatus.APPROVED
-      }
+        status: constants.userStatus.APPROVED,
+      },
     },
     {
       $lookup: {
         from: "users",
         localField: "_id",
         foreignField: "reportsTo",
-        as: "assignedLQs"
-      }
+        as: "assignedLQs",
+      },
     },
     {
       $match: {
         $or: [
           { assignedLQs: { $size: 0 } },
-          { assignedLQs: { $exists: false } }
-        ]
-      }
+          { assignedLQs: { $exists: false } },
+        ],
+      },
     },
     {
       $project: {
         _id: 1,
         name: 1,
         email: 1,
-        department: 1
-      }
+        department: 1,
+      },
     },
-    { $sort: { name: 1 } }
+    { $sort: { name: 1 } },
   ]);
 
   return res.status(statusCodes.OK).json({
     success: true,
-    managers
+    managers,
   });
 });
 
@@ -475,10 +469,7 @@ let getUnassignedLeadQualifiers = asyncHandler(async function (req, res) {
   let lqs = await User.find({
     role: "Lead Qualifiers",
     status: constants.userStatus.APPROVED,
-    $or: [
-      { reportsTo: null },
-      { reportsTo: { $exists: false } }
-    ]
+    $or: [{ reportsTo: null }, { reportsTo: { $exists: false } }],
   })
     .select("_id name email department role")
     .sort({ name: 1 });
@@ -490,8 +481,8 @@ let getUnassignedLeadQualifiers = asyncHandler(async function (req, res) {
       name: u.name,
       email: u.email,
       department: u.department,
-      role: u.role
-    }))
+      role: u.role,
+    })),
   });
 });
 
@@ -517,7 +508,7 @@ let assignLqsToManager = asyncHandler(async function (req, res, next) {
   let manager = await User.findOne({
     _id: managerId,
     role: "Manager",
-    status: constants.userStatus.APPROVED
+    status: constants.userStatus.APPROVED,
   }).select("_id");
 
   if (!manager) {
@@ -528,16 +519,16 @@ let assignLqsToManager = asyncHandler(async function (req, res, next) {
     {
       _id: { $in: lqIds },
       role: "Lead Qualifiers",
-      status: constants.userStatus.APPROVED
+      status: constants.userStatus.APPROVED,
     },
-    { $set: { reportsTo: manager._id } }
+    { $set: { reportsTo: manager._id } },
   );
 
   return res.status(statusCodes.OK).json({
     success: true,
     message: "Lead Qualifiers assigned to manager",
     managerId,
-    assignedCount: result.modifiedCount || 0
+    assignedCount: result.modifiedCount || 0,
   });
 });
 
@@ -558,18 +549,17 @@ let unassignLqs = asyncHandler(async function (req, res, next) {
     {
       _id: { $in: lqIds },
       role: "Lead Qualifiers",
-      status: constants.userStatus.APPROVED
+      status: constants.userStatus.APPROVED,
     },
-    { $unset: { reportsTo: "" } }
+    { $unset: { reportsTo: "" } },
   );
 
   return res.status(statusCodes.OK).json({
     success: true,
     message: "Lead Qualifiers unassigned",
-    unassignedCount: result.modifiedCount || 0
+    unassignedCount: result.modifiedCount || 0,
   });
 });
-
 
 // --- Final Export ---
 module.exports = {
@@ -583,5 +573,5 @@ module.exports = {
   getManagersWithoutLQs,
   getUnassignedLeadQualifiers,
   assignLqsToManager,
-  unassignLqs
+  unassignLqs,
 };
