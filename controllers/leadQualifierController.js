@@ -32,7 +32,7 @@ function getPktDateTime() {
 // ---------------------------------------------
 // GET /api/lq/leads
 // ---------------------------------------------
-let getMyLeads = asyncHandler(async function (req, res) {
+let getMyLeads = asyncHandler(async function (req, res, next) {
   let limit = parseInt(req.query.limit || "20", 10);
   let skip = parseInt(req.query.skip || "0", 10);
 
@@ -40,26 +40,107 @@ let getMyLeads = asyncHandler(async function (req, res) {
   if (limit > 100) limit = 100;
   if (isNaN(skip) || skip < 0) skip = 0;
 
+  // ----------------------------
+  // 1) Status filter
+  // ----------------------------
+  let lqStatus = String(req.query.lqStatus || "").trim().toUpperCase();
+  let allowed = ["PENDING", "REACHED", "DEAD", "QUALIFIED", "ALL", ""];
+  if (allowed.indexOf(lqStatus) === -1) {
+    return next(httpError(statusCodes.BAD_REQUEST, "Invalid lqStatus filter"));
+  }
+
+  // ----------------------------
+  // 2) Date filters (PKT)
+  // today=true OR from/to (YYYY-MM-DD)
+  // ----------------------------
+  let today = String(req.query.today || "").trim().toLowerCase(); // "true" | "1"
+  let from = String(req.query.from || "").trim(); // YYYY-MM-DD
+  let to = String(req.query.to || "").trim();     // YYYY-MM-DD
+
+  function isYmd(s) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(s);
+  }
+
+  function pktStart(dateStr) {
+    return new Date(dateStr + "T00:00:00.000+05:00");
+  }
+
+  function pktEnd(dateStr) {
+    return new Date(dateStr + "T23:59:59.999+05:00");
+  }
+
+  let createdAtFilter = null;
+
+  // If today is requested, it overrides range
+  if (today === "true" || today === "1") {
+    let now = new Date();
+    let pktDate = now.toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" }); // YYYY-MM-DD
+    createdAtFilter = { $gte: pktStart(pktDate), $lte: pktEnd(pktDate) };
+  } else {
+    // range filter (from/to)
+    if (from && !isYmd(from)) {
+      return next(httpError(statusCodes.BAD_REQUEST, "Invalid from date (use YYYY-MM-DD)"));
+    }
+    if (to && !isYmd(to)) {
+      return next(httpError(statusCodes.BAD_REQUEST, "Invalid to date (use YYYY-MM-DD)"));
+    }
+
+    // Build range only if at least one exists
+    if (from || to) {
+      createdAtFilter = {};
+      if (from) createdAtFilter.$gte = pktStart(from);
+      if (to) createdAtFilter.$lte = pktEnd(to);
+    }
+  }
+
+  // ----------------------------
+  // 3) Build query
+  // ----------------------------
   let query = {
     stage: "LQ",
     assignedTo: req.user.id
   };
 
-  let leads = await Lead.find(query)
-    .sort({ assignedAt: 1, createdAt: -1 })
-    .skip(skip)
-    .limit(limit)
-    .select(
-      "name location emails phones sources stage status lqStatus comments submittedDate submittedTime assignedAt createdAt"
-    );
+  if (lqStatus && lqStatus !== "ALL") {
+    query.lqStatus = lqStatus;
+  }
+
+  if (createdAtFilter) {
+    query.createdAt = createdAtFilter;
+  }
+
+  // ----------------------------
+  // 4) Fetch + count (optimized)
+  // ----------------------------
+  let projection =
+    "name location emails phones sources stage status lqStatus comments submittedDate submittedTime assignedAt createdAt";
+
+  let [leads, total] = await Promise.all([
+    Lead.find(query)
+      .sort({ assignedAt: 1, createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .select(projection)
+      .lean(),
+    Lead.countDocuments(query)
+  ]);
 
   return res.status(statusCodes.OK).json({
     success: true,
-    limit: limit,
-    skip: skip,
-    leads: leads
+    total,
+    limit,
+    skip,
+    filters: {
+      lqStatus: lqStatus || "ALL",
+      today: today === "true" || today === "1" ? true : false,
+      from: from || null,
+      to: to || null
+    },
+    leads
   });
 });
+
+
 
 // ---------------------------------------------
 // PATCH /api/lq/leads/:leadId/status

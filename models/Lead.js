@@ -91,7 +91,7 @@ let LeadSchema = new mongoose.Schema(
     // LQ stage fields
     lqStatus: {
       type: String,
-      enum: ["PENDING", "IN_CONVERSATION", "DEAD", "QUALIFIED"],
+      enum: ["PENDING", "REACHED", "DEAD", "QUALIFIED"],
       default: "PENDING",
     },
     comments: { type: [CommentSchema], default: [] },
