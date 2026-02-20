@@ -37,4 +37,12 @@ router.post(
   lqController.submitToMyManager
 );
 
+// Get LQ stats
+router.get(
+  "/leads/stats",
+  requireAuth,
+  requireRole(["Lead Qualifiers", "Admin", "Super Admin"]),
+  lqController.getMyStats
+)
+
 module.exports = router;
