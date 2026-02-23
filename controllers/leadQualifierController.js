@@ -570,7 +570,7 @@ let getMyStats = asyncHandler(async function (req, res, next) {
             $match: Object.assign(
               {
                 stage: "LQ",
-                assignedTo: mongoose.Types.ObjectId(req.user.id),
+                assignedTo: new mongoose.Types.ObjectId(req.user.id),
               },
               range ? { createdAt: range } : {}
             ),
@@ -601,7 +601,7 @@ let getMyStats = asyncHandler(async function (req, res, next) {
           {
             $match: Object.assign(
               {
-                lqUpdatedBy: mongoose.Types.ObjectId(req.user.id),
+                lqUpdatedBy: new mongoose.Types.ObjectId(req.user.id),
               },
               range ? { lqUpdatedAt: range } : {}
             ),
