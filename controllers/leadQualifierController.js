@@ -5,6 +5,7 @@ let normalize = require("../utils/normalize");
 let statusCodes = require("../utils/statusCodes");
 let httpError = require("../utils/httpError");
 let asyncHandler = require("../middlewares/asyncHandler");
+let { getPktDateTime, buildPktRange } = require("../utils/pktDate");
 
 // ---------------------------------------------
 // Helpers
@@ -14,20 +15,11 @@ function isValidObjectId(id) {
 }
 
 function isValidLqStatus(s) {
-  return ["IN_CONVERSATION", "DEAD", "QUALIFIED"].indexOf(s) !== -1;
+  return ["PENDING", "REACHED", "DEAD", "QUALIFIED"].indexOf(s) !== -1;
 }
 
-function getPktDateTime() {
-  let now = new Date();
-  return {
-    now: now,
-    pktDate: now.toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" }),
-    pktTime: now.toLocaleTimeString("en-GB", {
-      timeZone: "Asia/Karachi",
-      hour12: false
-    })
-  };
-}
+
+
 
 // ---------------------------------------------
 // GET /api/lq/leads
@@ -40,63 +32,25 @@ let getMyLeads = asyncHandler(async function (req, res, next) {
   if (limit > 100) limit = 100;
   if (isNaN(skip) || skip < 0) skip = 0;
 
-  // ----------------------------
-  // 1) Status filter
-  // ----------------------------
   let lqStatus = String(req.query.lqStatus || "").trim().toUpperCase();
   let allowed = ["PENDING", "REACHED", "DEAD", "QUALIFIED", "ALL", ""];
-  if (allowed.indexOf(lqStatus) === -1) {
+  if (!allowed.includes(lqStatus)) {
     return next(httpError(statusCodes.BAD_REQUEST, "Invalid lqStatus filter"));
   }
 
-  // ----------------------------
-  // 2) Date filters (PKT)
-  // today=true OR from/to (YYYY-MM-DD)
-  // ----------------------------
   let today = String(req.query.today || "").trim().toLowerCase();
   let from = String(req.query.from || "").trim();
   let to = String(req.query.to || "").trim();
 
-  function isYmd(s) {
-    return /^\d{4}-\d{2}-\d{2}$/.test(s);
+  let createdAtFilter;
+  try {
+    createdAtFilter = buildPktRange({ today, from, to });
+  } catch (err) {
+    return next(
+      httpError(statusCodes.BAD_REQUEST, "Invalid date format (YYYY-MM-DD)")
+    );
   }
 
-  function pktStart(dateStr) {
-    return new Date(dateStr + "T00:00:00.000+05:00");
-  }
-
-  function pktEnd(dateStr) {
-    return new Date(dateStr + "T23:59:59.999+05:00");
-  }
-
-  let createdAtFilter = null;
-
-  if (today === "true" || today === "1") {
-    let now = new Date();
-    let pktDate = now.toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" });
-    createdAtFilter = { $gte: pktStart(pktDate), $lte: pktEnd(pktDate) };
-  } else {
-    if (from && !isYmd(from)) {
-      return next(
-        httpError(statusCodes.BAD_REQUEST, "Invalid from date (use YYYY-MM-DD)")
-      );
-    }
-    if (to && !isYmd(to)) {
-      return next(
-        httpError(statusCodes.BAD_REQUEST, "Invalid to date (use YYYY-MM-DD)")
-      );
-    }
-
-    if (from || to) {
-      createdAtFilter = {};
-      if (from) createdAtFilter.$gte = pktStart(from);
-      if (to) createdAtFilter.$lte = pktEnd(to);
-    }
-  }
-
-  // ----------------------------
-  // 3) Build base query (for counts + list)
-  // ----------------------------
   let baseQuery = {
     stage: "LQ",
     assignedTo: req.user.id,
@@ -106,20 +60,15 @@ let getMyLeads = asyncHandler(async function (req, res, next) {
     baseQuery.createdAt = createdAtFilter;
   }
 
-  // Query for list (includes status filter)
-  let listQuery = Object.assign({}, baseQuery);
+  let listQuery = { ...baseQuery };
   if (lqStatus && lqStatus !== "ALL") {
     listQuery.lqStatus = lqStatus;
   }
 
-  // ----------------------------
-  // 4) Fetch list + total + counts_by_status (optimized)
-  // ----------------------------
   let projection =
     "name location emails phones sources stage status lqStatus comments submittedDate submittedTime assignedAt createdAt";
 
   let current_page = Math.floor(skip / limit) + 1;
-
   let [leads, total_records, countsAgg] = await Promise.all([
     Lead.find(listQuery)
       .sort({ assignedAt: 1, createdAt: -1 })
@@ -127,9 +76,11 @@ let getMyLeads = asyncHandler(async function (req, res, next) {
       .limit(limit)
       .select(projection)
       .lean(),
+
     Lead.countDocuments(listQuery),
+
     Lead.aggregate([
-      { $match: baseQuery }, // IMPORTANT: counts respect date filter, but not the lqStatus tab filter
+      { $match: baseQuery },
       {
         $group: {
           _id: "$lqStatus",
@@ -139,7 +90,6 @@ let getMyLeads = asyncHandler(async function (req, res, next) {
     ]),
   ]);
 
-  // Build counts_by_status with all keys always present
   let counts_by_status = {
     ALL: 0,
     PENDING: 0,
@@ -148,31 +98,25 @@ let getMyLeads = asyncHandler(async function (req, res, next) {
     QUALIFIED: 0,
   };
 
-  for (let i = 0; i < countsAgg.length; i++) {
-    let k = String(countsAgg[i]._id || "").toUpperCase();
-    let c = countsAgg[i].count || 0;
-    if (counts_by_status[k] !== undefined) {
-      counts_by_status[k] = c;
-      counts_by_status.ALL += c;
+  countsAgg.forEach((row) => {
+    let key = String(row._id || "").toUpperCase();
+    if (counts_by_status[key] !== undefined) {
+      counts_by_status[key] = row.count;
+      counts_by_status.ALL += row.count;
     }
-  }
+  });
 
   return res.status(statusCodes.OK).json({
     success: true,
+    message: "Lead Qualifier leads including the metadata for pagination and status counts",
     metadata: {
-      total_records: total_records,
-      current_page: current_page,
+      total_records,
+      current_page,
       per_page: limit,
-      skip: skip,
-      applied_filters: {
-        lqStatus: lqStatus || "ALL",
-        today: today === "true" || today === "1",
-        from: from || null,
-        to: to || null,
-      },
-      counts_by_status: counts_by_status,
+      skip,
+      counts_by_status,
     },
-    leads: leads,
+    leads,
   });
 });
 
@@ -274,7 +218,6 @@ let addComment = asyncHandler(async function (req, res, next) {
 //submit qualified lead to manager (multi-contact)
 let submitToMyManager = asyncHandler(async function (req, res, next) {
   let leadId = req.params.leadId;
-  console.log("submitToMyManager called with leadId:", leadId, "and body:", req.body);
 
   if (!isValidObjectId(leadId)) {
     return next(httpError(statusCodes.BAD_REQUEST, "Invalid leadId"));
@@ -501,156 +444,86 @@ let submitToMyManager = asyncHandler(async function (req, res, next) {
   });
 });
 
-// ---------------------------------------------
+// ---------------------------------------------  
 // GET /api/lq/stats
-// query:
-//   today=true|1 OR from=YYYY-MM-DD&to=YYYY-MM-DD
-// returns:
-//   totalLeadsInLQ, qualifiedInLQ, reachedInLQ, deadInLQ,
-//   qualifiedOverall (LQ + MANAGER processed by me),
-//   submittedToManager (MANAGER stage processed by me)
+// PERFORMANCE-BASED STATS
 // ---------------------------------------------
 let getMyStats = asyncHandler(async function (req, res, next) {
-  // ----------------------------
-  // Date filters (PKT)
-  // ----------------------------
   let today = String(req.query.today || "").trim().toLowerCase();
   let from = String(req.query.from || "").trim();
   let to = String(req.query.to || "").trim();
 
-  function isYmd(s) {
-    return /^\d{4}-\d{2}-\d{2}$/.test(s);
+  let range;
+  try {
+    range = buildPktRange({ today, from, to });
+  } catch (err) {
+    return next(
+      httpError(statusCodes.BAD_REQUEST, "Invalid date format (YYYY-MM-DD)")
+    );
   }
 
-  function pktStart(dateStr) {
-    return new Date(dateStr + "T00:00:00.000+05:00");
-  }
+  let userId = new mongoose.Types.ObjectId(req.user.id);
 
-  function pktEnd(dateStr) {
-    return new Date(dateStr + "T23:59:59.999+05:00");
-  }
-
-  let range = null;
-
-  if (today === "true" || today === "1") {
-    let now = new Date();
-    let pktDate = now.toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" });
-    range = { $gte: pktStart(pktDate), $lte: pktEnd(pktDate) };
-  } else {
-    if (from && !isYmd(from)) {
-      return next(
-        httpError(statusCodes.BAD_REQUEST, "Invalid from date (use YYYY-MM-DD)")
-      );
-    }
-    if (to && !isYmd(to)) {
-      return next(
-        httpError(statusCodes.BAD_REQUEST, "Invalid to date (use YYYY-MM-DD)")
-      );
-    }
-
-    if (from || to) {
-      range = {};
-      if (from) range.$gte = pktStart(from);
-      if (to) range.$lte = pktEnd(to);
-    }
-  }
-
-  // ----------------------------
-  // Aggregation:
-  // - LQ stage stats use createdAt filter (same behavior as leads listing)
-  // - "overall qualified" + "submittedToManager" use lqUpdatedAt filter
-  //   (because submit updates lqUpdatedAt in your submitToMyManager)
-  // ----------------------------
   let pipeline = [
     {
-      $facet: {
-        // 1) "My current LQ bucket" (what's still with me)
-        lqBucket: [
-          {
-            $match: Object.assign(
-              {
-                stage: "LQ",
-                assignedTo: new mongoose.Types.ObjectId(req.user.id),
-              },
-              range ? { createdAt: range } : {}
-            ),
-          },
-          {
-            $group: {
-              _id: null,
-              totalLeadsInLQ: { $sum: 1 },
-              qualifiedInLQ: {
-                $sum: { $cond: [{ $eq: ["$lqStatus", "QUALIFIED"] }, 1, 0] },
-              },
-              reachedInLQ: {
-                $sum: { $cond: [{ $eq: ["$lqStatus", "REACHED"] }, 1, 0] },
-              },
-              deadInLQ: {
-                $sum: { $cond: [{ $eq: ["$lqStatus", "DEAD"] }, 1, 0] },
-              },
-              pendingInLQ: {
-                $sum: { $cond: [{ $eq: ["$lqStatus", "PENDING"] }, 1, 0] },
-              },
-            },
-          },
-          { $project: { _id: 0 } },
-        ],
-
-        // 2) "What I processed overall" (includes leads I already submitted)
-        processedOverall: [
-          {
-            $match: Object.assign(
-              {
-                lqUpdatedBy: new mongoose.Types.ObjectId(req.user.id),
-              },
-              range ? { lqUpdatedAt: range } : {}
-            ),
-          },
-          {
-            $group: {
-              _id: null,
-              // qualified overall across ANY stage (LQ + MANAGER etc.)
-              qualifiedOverall: {
-                $sum: { $cond: [{ $eq: ["$lqStatus", "QUALIFIED"] }, 1, 0] },
-              },
-              // how many have been submitted to manager by me
-              submittedToManager: {
-                $sum: { $cond: [{ $eq: ["$stage", "MANAGER"] }, 1, 0] },
-              },
-            },
-          },
-          { $project: { _id: 0 } },
-        ],
+      $match: {
+        lqUpdatedBy: userId,
+        ...(range ? { lqUpdatedAt: range } : {}),
       },
     },
+    {
+      $group: {
+        _id: null,
+
+        // leads pushed to manager
+        submittedToManager: {
+          $sum: { $cond: [{ $eq: ["$stage", "MANAGER"] }, 1, 0] },
+        },
+
+        // ONLY qualified that were pushed
+        qualifiedOverall: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ["$stage", "MANAGER"] },
+                  { $eq: ["$lqStatus", "QUALIFIED"] },
+                ],
+              },
+              1,
+              0,
+            ],
+          },
+        },
+
+        reached: {
+          $sum: { $cond: [{ $eq: ["$lqStatus", "REACHED"] }, 1, 0] },
+        },
+
+        dead: {
+          $sum: { $cond: [{ $eq: ["$lqStatus", "DEAD"] }, 1, 0] },
+        },
+      },
+    },
+    { $project: { _id: 0 } },
   ];
 
-  let out = await Lead.aggregate(pipeline);
+  let result = await Lead.aggregate(pipeline);
 
-  let lq = (out[0] && out[0].lqBucket && out[0].lqBucket[0]) || {
-    totalLeadsInLQ: 0,
-    qualifiedInLQ: 0,
-    reachedInLQ: 0,
-    deadInLQ: 0,
-    pendingInLQ: 0,
+  let stats = result[0] || {
+    submittedToManager: 0,
+    qualifiedOverall: 0,
+    reached: 0,
+    dead: 0,
   };
-
-  let overall =
-    (out[0] && out[0].processedOverall && out[0].processedOverall[0]) || {
-      qualifiedOverall: 0,
-      submittedToManager: 0,
-    };
 
   return res.status(statusCodes.OK).json({
     success: true,
-    filters: {
-      today: today === "true" || today === "1" ? true : false,
-      from: from || null,
-      to: to || null,
-    },
-    stats: Object.assign({}, lq, overall),
+    message: "Lead Qualifier stats",
+    stats,
   });
 });
+
 
 module.exports = {
   getMyLeads: getMyLeads,
