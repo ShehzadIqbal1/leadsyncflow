@@ -18,9 +18,6 @@ function isValidLqStatus(s) {
   return ["PENDING", "REACHED", "DEAD", "QUALIFIED"].indexOf(s) !== -1;
 }
 
-
-
-
 // ---------------------------------------------
 // GET /api/lq/leads
 // ---------------------------------------------
@@ -32,13 +29,17 @@ let getMyLeads = asyncHandler(async function (req, res, next) {
   if (limit > 100) limit = 100;
   if (isNaN(skip) || skip < 0) skip = 0;
 
-  let lqStatus = String(req.query.lqStatus || "").trim().toUpperCase();
+  let lqStatus = String(req.query.lqStatus || "")
+    .trim()
+    .toUpperCase();
   let allowed = ["PENDING", "REACHED", "DEAD", "QUALIFIED", "ALL", ""];
   if (!allowed.includes(lqStatus)) {
     return next(httpError(statusCodes.BAD_REQUEST, "Invalid lqStatus filter"));
   }
 
-  let today = String(req.query.today || "").trim().toLowerCase();
+  let today = String(req.query.today || "")
+    .trim()
+    .toLowerCase();
   let from = String(req.query.from || "").trim();
   let to = String(req.query.to || "").trim();
 
@@ -47,7 +48,7 @@ let getMyLeads = asyncHandler(async function (req, res, next) {
     createdAtFilter = buildPktRange({ today, from, to });
   } catch (err) {
     return next(
-      httpError(statusCodes.BAD_REQUEST, "Invalid date format (YYYY-MM-DD)")
+      httpError(statusCodes.BAD_REQUEST, "Invalid date format (YYYY-MM-DD)"),
     );
   }
 
@@ -108,7 +109,8 @@ let getMyLeads = asyncHandler(async function (req, res, next) {
 
   return res.status(statusCodes.OK).json({
     success: true,
-    message: "Lead Qualifier leads including the metadata for pagination and status counts",
+    message:
+      "Lead Qualifier leads including the metadata for pagination and status counts",
     metadata: {
       total_records,
       current_page,
@@ -119,7 +121,6 @@ let getMyLeads = asyncHandler(async function (req, res, next) {
     leads,
   });
 });
-
 
 // ---------------------------------------------
 // PATCH /api/lq/leads/:leadId/status
@@ -142,11 +143,13 @@ let updateLqStatus = asyncHandler(async function (req, res, next) {
   let lead = await Lead.findOne({
     _id: leadId,
     stage: "LQ",
-    assignedTo: req.user.id
+    assignedTo: req.user.id,
   });
 
   if (!lead) {
-    return next(httpError(statusCodes.NOT_FOUND, "Lead not found / not assigned to you"));
+    return next(
+      httpError(statusCodes.NOT_FOUND, "Lead not found / not assigned to you"),
+    );
   }
 
   lead.lqStatus = lqStatus;
@@ -158,7 +161,7 @@ let updateLqStatus = asyncHandler(async function (req, res, next) {
   return res.status(statusCodes.OK).json({
     success: true,
     message: "LQ status updated",
-    lqStatus: lead.lqStatus
+    lqStatus: lead.lqStatus,
   });
 });
 
@@ -185,11 +188,13 @@ let addComment = asyncHandler(async function (req, res, next) {
   let lead = await Lead.findOne({
     _id: leadId,
     stage: "LQ",
-    assignedTo: req.user.id
+    assignedTo: req.user.id,
   });
 
   if (!lead) {
-    return next(httpError(statusCodes.NOT_FOUND, "Lead not found / not assigned to you"));
+    return next(
+      httpError(statusCodes.NOT_FOUND, "Lead not found / not assigned to you"),
+    );
   }
 
   let pkt = getPktDateTime();
@@ -200,7 +205,7 @@ let addComment = asyncHandler(async function (req, res, next) {
     createdByRole: "Lead Qualifiers",
     createdAt: pkt.now,
     createdDate: pkt.pktDate,
-    createdTime: pkt.pktTime
+    createdTime: pkt.pktTime,
   });
 
   lead.lqUpdatedAt = pkt.now;
@@ -211,7 +216,7 @@ let addComment = asyncHandler(async function (req, res, next) {
   return res.status(statusCodes.CREATED).json({
     success: true,
     message: "Comment added",
-    commentsCount: lead.comments.length
+    commentsCount: lead.comments.length,
   });
 });
 
@@ -233,7 +238,11 @@ let submitToMyManager = asyncHandler(async function (req, res, next) {
 
   // normalize/clean inputs
   selectedEmails = selectedEmails
-    .map((x) => String(x || "").trim().toLowerCase())
+    .map((x) =>
+      String(x || "")
+        .trim()
+        .toLowerCase(),
+    )
     .filter(Boolean);
 
   selectedPhones = selectedPhones
@@ -245,8 +254,8 @@ let submitToMyManager = asyncHandler(async function (req, res, next) {
     return next(
       httpError(
         statusCodes.BAD_REQUEST,
-        "Provide at least one selectedEmail or selectedPhone"
-      )
+        "Provide at least one selectedEmail or selectedPhone",
+      ),
     );
   }
 
@@ -260,8 +269,8 @@ let submitToMyManager = asyncHandler(async function (req, res, next) {
     return next(
       httpError(
         statusCodes.BAD_REQUEST,
-        "No manager assigned to you yet. Ask Super Admin to assign a manager."
-      )
+        "No manager assigned to you yet. Ask Super Admin to assign a manager.",
+      ),
     );
   }
 
@@ -276,8 +285,8 @@ let submitToMyManager = asyncHandler(async function (req, res, next) {
     return next(
       httpError(
         statusCodes.BAD_REQUEST,
-        "Your assigned manager is invalid or not approved"
-      )
+        "Your assigned manager is invalid or not approved",
+      ),
     );
   }
 
@@ -287,12 +296,12 @@ let submitToMyManager = asyncHandler(async function (req, res, next) {
     stage: "LQ",
     assignedTo: req.user.id,
   }).select(
-    "stage lqStatus emails phones phonesNormalized responseSource assignedTo assignedToRole assignedAt"
+    "stage lqStatus emails phones phonesNormalized responseSource assignedTo assignedToRole assignedAt",
   );
 
   if (!lead) {
     return next(
-      httpError(statusCodes.NOT_FOUND, "Lead not found / not assigned to you")
+      httpError(statusCodes.NOT_FOUND, "Lead not found / not assigned to you"),
     );
   }
 
@@ -301,8 +310,8 @@ let submitToMyManager = asyncHandler(async function (req, res, next) {
     return next(
       httpError(
         statusCodes.BAD_REQUEST,
-        "Lead must be QUALIFIED before submitting to manager"
-      )
+        "Lead must be QUALIFIED before submitting to manager",
+      ),
     );
   }
 
@@ -313,7 +322,9 @@ let submitToMyManager = asyncHandler(async function (req, res, next) {
   let selectedEmailSet = new Set(selectedEmails);
 
   let filteredEmails = existingEmails.filter(function (e) {
-    let n = String((e && e.normalized) || "").trim().toLowerCase();
+    let n = String((e && e.normalized) || "")
+      .trim()
+      .toLowerCase();
     return n && selectedEmailSet.has(n);
   });
 
@@ -328,8 +339,12 @@ let submitToMyManager = asyncHandler(async function (req, res, next) {
     : [];
 
   // build fast lookup sets
-  let existingRawSet = new Set(existingPhones.map((p) => String(p || "").trim()));
-  let existingNormSet = new Set(existingPhonesNorm.map((p) => String(p || "").trim()));
+  let existingRawSet = new Set(
+    existingPhones.map((p) => String(p || "").trim()),
+  );
+  let existingNormSet = new Set(
+    existingPhonesNorm.map((p) => String(p || "").trim()),
+  );
 
   let filteredPhones = [];
   let filteredPhonesNormalized = [];
@@ -340,19 +355,22 @@ let submitToMyManager = asyncHandler(async function (req, res, next) {
 
     let pNorm = normalize.normalizePhone(raw);
     if (!pNorm) {
-      return next(httpError(statusCodes.BAD_REQUEST, "Invalid phone in selectedPhones"));
+      return next(
+        httpError(statusCodes.BAD_REQUEST, "Invalid phone in selectedPhones"),
+      );
     }
 
     // must belong to THIS lead
     let belongs =
-      existingRawSet.has(raw) || existingNormSet.has(String(pNorm || "").trim());
+      existingRawSet.has(raw) ||
+      existingNormSet.has(String(pNorm || "").trim());
 
     if (!belongs) {
       return next(
         httpError(
           statusCodes.BAD_REQUEST,
-          "Selected phone not found in this lead"
-        )
+          "Selected phone not found in this lead",
+        ),
       );
     }
 
@@ -368,8 +386,8 @@ let submitToMyManager = asyncHandler(async function (req, res, next) {
     return next(
       httpError(
         statusCodes.BAD_REQUEST,
-        "Selected contacts do not match any existing emails/phones on this lead"
-      )
+        "Selected contacts do not match any existing emails/phones on this lead",
+      ),
     );
   }
 
@@ -444,12 +462,14 @@ let submitToMyManager = asyncHandler(async function (req, res, next) {
   });
 });
 
-// ---------------------------------------------  
+// ---------------------------------------------
 // GET /api/lq/stats
 // PERFORMANCE-BASED STATS
 // ---------------------------------------------
 let getMyStats = asyncHandler(async function (req, res, next) {
-  let today = String(req.query.today || "").trim().toLowerCase();
+  let today = String(req.query.today || "")
+    .trim()
+    .toLowerCase();
   let from = String(req.query.from || "").trim();
   let to = String(req.query.to || "").trim();
 
@@ -458,7 +478,7 @@ let getMyStats = asyncHandler(async function (req, res, next) {
     range = buildPktRange({ today, from, to });
   } catch (err) {
     return next(
-      httpError(statusCodes.BAD_REQUEST, "Invalid date format (YYYY-MM-DD)")
+      httpError(statusCodes.BAD_REQUEST, "Invalid date format (YYYY-MM-DD)"),
     );
   }
 
@@ -476,26 +496,9 @@ let getMyStats = asyncHandler(async function (req, res, next) {
         _id: null,
 
         // leads pushed to manager
-        submittedToManager: {
+        qualified: {
           $sum: { $cond: [{ $eq: ["$stage", "MANAGER"] }, 1, 0] },
         },
-
-        // ONLY qualified that were pushed
-        qualifiedOverall: {
-          $sum: {
-            $cond: [
-              {
-                $and: [
-                  { $eq: ["$stage", "MANAGER"] },
-                  { $eq: ["$lqStatus", "QUALIFIED"] },
-                ],
-              },
-              1,
-              0,
-            ],
-          },
-        },
-
         reached: {
           $sum: { $cond: [{ $eq: ["$lqStatus", "REACHED"] }, 1, 0] },
         },
@@ -511,8 +514,7 @@ let getMyStats = asyncHandler(async function (req, res, next) {
   let result = await Lead.aggregate(pipeline);
 
   let stats = result[0] || {
-    submittedToManager: 0,
-    qualifiedOverall: 0,
+    qualified: 0,
     reached: 0,
     dead: 0,
   };
@@ -524,11 +526,10 @@ let getMyStats = asyncHandler(async function (req, res, next) {
   });
 });
 
-
 module.exports = {
   getMyLeads: getMyLeads,
   updateLqStatus: updateLqStatus,
   addComment: addComment,
   submitToMyManager: submitToMyManager,
-  getMyStats: getMyStats
+  getMyStats: getMyStats,
 };

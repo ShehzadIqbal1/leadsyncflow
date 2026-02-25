@@ -27,7 +27,7 @@ module.exports = async function bootstrapSuperAdmin() {
   }
 
   // if user exists with same email, promote it
-  let existingEmail = await User.findOne({ email: String(email).toLowerCase() }).select("_id");
+  let existingEmail = await User.findOne({ email: String(email).toLowerCase() });
   if (existingEmail) {
     existingEmail.role = "Super Admin";
     existingEmail.status = "APPROVED";
