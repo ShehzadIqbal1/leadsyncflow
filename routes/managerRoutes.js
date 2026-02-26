@@ -5,32 +5,17 @@ let requireAuth = require("../middlewares/requireAuth");
 let requireRole = require("../middlewares/requireRole");
 let managerController = require("../controllers/managerController");
 
-router.get(
-  "/leads",
-  requireAuth,
-  requireRole("Manager",  "Admin"),
-  managerController.getMyAssignedLeads
-);
+// Apply middleware to all routes in this router to keep it DRY
+router.use(requireAuth);
+router.use(requireRole("Manager", "Admin"));
 
-router.post(
-  "/leads/:id/decision",
-  requireAuth,
-  requireRole("Manager",  "Admin"),
-  managerController.decisionOnLead
-);
+// GET all leads assigned to the manager
+router.get("/leads", managerController.getMyAssignedLeads);
 
-router.post(
-  "/leads/:id/comment",
-  requireAuth,
-  requireRole("Manager", "Admin"),
-  managerController.addManagerComment
-);
+// POST request for lead rejection
+router.post("/leads/:id/reqRejection", managerController.requestRejection);
 
-router.post(
-  "/leads/:id/payment-status",
-  requireAuth,
-  requireRole("Manager",  "Admin"),
-  managerController.updatePaymentStatus
-);
+// POST record payment/upsell
+router.post("/leads/:id/payment-status", managerController.updatePaymentStatus);
 
 module.exports = router;

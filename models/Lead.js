@@ -106,6 +106,23 @@ let LeadSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    // rejection system
+    rejectionRequested: { type: Boolean, default: false },
+    rejectionRequestedAt: { type: Date },
+    rejectionRequestedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+
+    // upsell system
+    upsales: [
+      {
+        amount: { type: Number, required: true },
+        comment: { type: String, default: "" },
+        addedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        addedAt: { type: Date },
+        addedDate: { type: String },
+        addedTime: { type: String },
+      },
+    ],
+    superAdminReturnPriorityUntil: { type: Date }, // 24hr priority system
   },
   { timestamps: true },
 );
