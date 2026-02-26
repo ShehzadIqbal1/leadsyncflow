@@ -43,9 +43,9 @@ let getMyLeads = asyncHandler(async function (req, res, next) {
   let from = String(req.query.from || "").trim();
   let to = String(req.query.to || "").trim();
 
-  let createdAtFilter;
+  let dateFilter;
   try {
-    createdAtFilter = buildPktRange({ today, from, to });
+    dateFilter = buildPktRange({ today, from, to });
   } catch (err) {
     return next(
       httpError(statusCodes.BAD_REQUEST, "Invalid date format (YYYY-MM-DD)"),
@@ -57,8 +57,8 @@ let getMyLeads = asyncHandler(async function (req, res, next) {
     assignedTo: req.user.id,
   };
 
-  if (createdAtFilter) {
-    baseQuery.createdAt = createdAtFilter;
+  if (dateFilter) {
+    baseQuery.assignedAt = dateFilter;
   }
 
   let listQuery = { ...baseQuery };
@@ -72,7 +72,7 @@ let getMyLeads = asyncHandler(async function (req, res, next) {
   let current_page = Math.floor(skip / limit) + 1;
   let [leads, total_records, countsAgg] = await Promise.all([
     Lead.find(listQuery)
-      .sort({ assignedAt: 1, createdAt: -1 })
+      .sort({ assignedAt: 1})
       .skip(skip)
       .limit(limit)
       .select(projection)
@@ -467,9 +467,7 @@ let submitToMyManager = asyncHandler(async function (req, res, next) {
 // PERFORMANCE-BASED STATS
 // ---------------------------------------------
 let getMyStats = asyncHandler(async function (req, res, next) {
-  let today = String(req.query.today || "")
-    .trim()
-    .toLowerCase();
+  let today = String(req.query.today || "").trim().toLowerCase();
   let from = String(req.query.from || "").trim();
   let to = String(req.query.to || "").trim();
 
@@ -477,9 +475,7 @@ let getMyStats = asyncHandler(async function (req, res, next) {
   try {
     range = buildPktRange({ today, from, to });
   } catch (err) {
-    return next(
-      httpError(statusCodes.BAD_REQUEST, "Invalid date format (YYYY-MM-DD)"),
-    );
+    return next(httpError(statusCodes.BAD_REQUEST, "Invalid date format"));
   }
 
   let userId = new mongoose.Types.ObjectId(req.user.id);
@@ -487,22 +483,31 @@ let getMyStats = asyncHandler(async function (req, res, next) {
   let pipeline = [
     {
       $match: {
-        lqUpdatedBy: userId,
-        ...(range ? { lqUpdatedAt: range } : {}),
+        assignedTo: userId, // Match leads assigned to this user
+        stage: "LQ",        // Ensure they are still in the LQ stage
+        ...(range ? { assignedAt: range } : {}), // Filter by assignment date
       },
     },
     {
       $group: {
         _id: null,
+        // 1. Total leads received in this time range
+        totalReceived: { $sum: 1 },
 
-        // leads pushed to manager
+        // 2. Leads that are currently PENDING
+        pending: {
+          $sum: { $cond: [{ $eq: ["$lqStatus", "PENDING"] }, 1, 0] },
+        },
+
+        // 3. Leads that have reached the MANAGER stage (Qualified)
         qualified: {
           $sum: { $cond: [{ $eq: ["$stage", "MANAGER"] }, 1, 0] },
         },
+
+        // 4. Other Statuses
         reached: {
           $sum: { $cond: [{ $eq: ["$lqStatus", "REACHED"] }, 1, 0] },
         },
-
         dead: {
           $sum: { $cond: [{ $eq: ["$lqStatus", "DEAD"] }, 1, 0] },
         },
@@ -514,6 +519,8 @@ let getMyStats = asyncHandler(async function (req, res, next) {
   let result = await Lead.aggregate(pipeline);
 
   let stats = result[0] || {
+    totalReceived: 0,
+    pending: 0,
     qualified: 0,
     reached: 0,
     dead: 0,
@@ -521,7 +528,7 @@ let getMyStats = asyncHandler(async function (req, res, next) {
 
   return res.status(statusCodes.OK).json({
     success: true,
-    message: "Lead Qualifier stats",
+    message: "Lead Qualifier performance stats",
     stats,
   });
 });
