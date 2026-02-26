@@ -140,5 +140,6 @@ LeadSchema.index({ stage: 1, createdAt: -1 });
 LeadSchema.index({ assignedTo: 1, stage: 1, createdAt: -1 });
 LeadSchema.index({ lqStatus: 1, stage: 1 });
 LeadSchema.index({ status: 1, stage: 1 });
+LeadSchema.index({ assignedTo: 1, stage: 1, assignedAt: -1 });
 
 module.exports = mongoose.model("Lead", LeadSchema);
