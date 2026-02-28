@@ -1,7 +1,7 @@
-let mongoose = require("mongoose");
-let constants = require("../utils/constants");
+const mongoose = require("mongoose");
+const constants = require("../utils/constants");
 
-let userSchema = new mongoose.Schema(
+const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
 

@@ -1,7 +1,7 @@
-let express = require("express");
-let router = express.Router();
+const express = require("express");
+const router = express.Router();
 
-let authController = require("../controllers/authController");
+const authController = require("../controllers/authController");
 
 router.post("/signup", authController.signup); // JSON only
 router.post("/login", authController.login);

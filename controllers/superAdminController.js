@@ -1,10 +1,10 @@
-let mongoose = require("mongoose");
-let User = require("../models/User");
-let Lead = require("../models/Lead");
-let constants = require("../utils/constants");
-let statusCodes = require("../utils/statusCodes");
-let httpError = require("../utils/httpError");
-let asyncHandler = require("../middlewares/asyncHandler");
+const mongoose = require("mongoose");
+const User = require("../models/User");
+const Lead = require("../models/Lead");
+const constants = require("../utils/constants");
+const statusCodes = require("../utils/statusCodes");
+const httpError = require("../utils/httpError");
+const asyncHandler = require("../middlewares/asyncHandler");
 
 // --- Helpers ---
 function isValidObjectId(id) {
@@ -12,7 +12,7 @@ function isValidObjectId(id) {
 }
 // Helper: parse date range (YYYY-MM-DD)
 function buildDateMatch(from, to) {
-  let match = {};
+  const match = {};
   if (from) match.$gte = new Date(from + "T00:00:00.000Z");
   if (to) match.$lte = new Date(to + "T23:59:59.999Z");
   return Object.keys(match).length ? match : null;
@@ -28,15 +28,15 @@ function isInList(value, list) {
 // --------------------------------------------
 
 // GET /api/superadmin/overview
-let getOverview = asyncHandler(async function (req, res, next) {
-  let from = String(req.query.from || "").trim();
-  let to = String(req.query.to || "").trim();
+const getOverview = asyncHandler(async function (req, res, next) {
+  const from = String(req.query.from || "").trim();
+  const to = String(req.query.to || "").trim();
 
-  let createdAtMatch = buildDateMatch(from, to);
-  let baseMatch = {};
+  const createdAtMatch = buildDateMatch(from, to);
+  const baseMatch = {};
   if (createdAtMatch) baseMatch.createdAt = createdAtMatch;
 
-  let totalsAgg = await Lead.aggregate([
+  const totalsAgg = await Lead.aggregate([
     { $match: baseMatch },
     {
       $group: {
@@ -59,7 +59,7 @@ let getOverview = asyncHandler(async function (req, res, next) {
     { $project: { _id: 0 } },
   ]);
 
-  let totals = totalsAgg[0] || {
+  const totals = totalsAgg[0] || {
     totalLeads: 0,
     dmCount: 0,
     lqCount: 0,
@@ -74,7 +74,7 @@ let getOverview = asyncHandler(async function (req, res, next) {
     return Math.round((a / b) * 10000) / 100;
   }
 
-  let conversions = {
+  const conversions = {
     dm_to_lq: pct(totals.lqCount + totals.managerCount, totals.totalLeads),
     lq_to_manager: pct(
       totals.managerCount,
@@ -84,7 +84,7 @@ let getOverview = asyncHandler(async function (req, res, next) {
   };
 
   // Leaderboards
-  let dmLeaderboard = await Lead.aggregate([
+  const dmLeaderboard = await Lead.aggregate([
     { $match: baseMatch },
     { $group: { _id: "$createdBy", leadsCreated: { $sum: 1 } } },
     { $sort: { leadsCreated: -1 } },
@@ -110,7 +110,7 @@ let getOverview = asyncHandler(async function (req, res, next) {
     },
   ]);
 
-  let lqLeaderboard = await Lead.aggregate([
+  const lqLeaderboard = await Lead.aggregate([
     {
       $match: Object.assign({}, baseMatch, {
         lqUpdatedBy: { $exists: true, $ne: null },
@@ -140,7 +140,7 @@ let getOverview = asyncHandler(async function (req, res, next) {
     },
   ]);
 
-  let managerLeaderboard = await Lead.aggregate([
+  const managerLeaderboard = await Lead.aggregate([
     {
       $match: Object.assign({}, baseMatch, {
         stage: "MANAGER",
@@ -196,18 +196,18 @@ let getOverview = asyncHandler(async function (req, res, next) {
 });
 
 // GET /api/superadmin/leads
-let getAllLeads = asyncHandler(async function (req, res, next) {
-  let limit = Math.min(parseInt(req.query.limit || "20", 10), 100);
-  let skip = Math.max(parseInt(req.query.skip || "0", 10), 0);
+const getAllLeads = asyncHandler(async function (req, res, next) {
+  const limit = Math.min(parseInt(req.query.limit || "20", 10), 100);
+  const skip = Math.max(parseInt(req.query.skip || "0", 10), 0);
 
-  let filter = {};
+  const filter = {};
   if (req.query.stage) filter.stage = req.query.stage.trim();
   if (req.query.status) filter.status = req.query.status.trim();
   if (req.query.lqStatus) filter.lqStatus = req.query.lqStatus.trim();
   if (req.query.assignedTo) filter.assignedTo = req.query.assignedTo.trim();
 
   // 1. Fetch the paginated leads
-  let leads = await Lead.find(filter)
+  const leads = await Lead.find(filter)
     .sort({ updatedAt: -1 })
     .skip(skip)
     .limit(limit)
@@ -254,15 +254,16 @@ let getAllLeads = asyncHandler(async function (req, res, next) {
 });
 
 // GET /api/superadmin/performance
-let getPerformance = asyncHandler(async function (req, res, next) {
-  let role = String(req.query.role || "").trim();
+const getPerformance = asyncHandler(async function (req, res, next) {
+  const role = String(req.query.role || "").trim();
   if (!role)
     return next(httpError(statusCodes.BAD_REQUEST, "role query is required"));
 
-  let users = await User.find({ role: role }).select(
+  const users = await User.find({ role: role }).select(
     "_id name email role status",
   );
-  let userIds = users.map((u) => u._id);
+  const userIds = users.map((u) => u._id);
+  // eslint-disable-next-line no-useless-assignment
   let perf = [];
 
   if (role === "Data Minors") {
@@ -303,10 +304,10 @@ let getPerformance = asyncHandler(async function (req, res, next) {
     return next(httpError(statusCodes.BAD_REQUEST, "Unsupported role"));
   }
 
-  let map = {};
+  const map = {};
   perf.forEach((p) => (map[String(p._id)] = p));
 
-  let rows = users.map((u) => ({
+  const rows = users.map((u) => ({
     userId: u._id,
     name: u.name,
     email: u.email,
@@ -323,21 +324,21 @@ let getPerformance = asyncHandler(async function (req, res, next) {
 // USER MANAGEMENT (APPROVALS)
 // --------------------------------------------
 
-let getPendingRequests = asyncHandler(async function (req, res, next) {
-  let items = await User.find({ status: constants.userStatus.PENDING })
+const getPendingRequests = asyncHandler(async function (req, res, next) {
+  const items = await User.find({ status: constants.userStatus.PENDING })
     .select("name email department sex createdAt")
     .sort({ createdAt: -1 });
   res.status(statusCodes.OK).json({ success: true, requests: items });
 });
 
-let approveRequest = asyncHandler(async function (req, res, next) {
-  let userId = req.params.id;
-  let role = req.body && req.body.role ? String(req.body.role).trim() : "";
+const approveRequest = asyncHandler(async function (req, res, next) {
+  const userId = req.params.id;
+  const role = req.body && req.body.role ? String(req.body.role).trim() : "";
 
   if (!role || !isInList(role, constants.roles))
     return next(httpError(statusCodes.BAD_REQUEST, "Invalid or missing role"));
 
-  let user = await User.findOneAndUpdate(
+  const user = await User.findOneAndUpdate(
     { _id: userId, status: constants.userStatus.PENDING },
     {
       status: constants.userStatus.APPROVED,
@@ -356,8 +357,8 @@ let approveRequest = asyncHandler(async function (req, res, next) {
     .json({ success: true, message: "User approved", userId, role });
 });
 
-let rejectRequest = asyncHandler(async function (req, res, next) {
-  let user = await User.findOneAndDelete({
+const rejectRequest = asyncHandler(async function (req, res, next) {
+  const user = await User.findOneAndDelete({
     _id: req.params.id,
     status: constants.userStatus.PENDING,
   });
@@ -372,8 +373,8 @@ let rejectRequest = asyncHandler(async function (req, res, next) {
 // 1️⃣ GET managers WITH assigned Lead Qualifiers
 // ==================================================
 // GET /api/superadmin/managers/with-lqs
-let getManagersWithLQs = asyncHandler(async function (req, res) {
-  let managers = await User.aggregate([
+const getManagersWithLQs = asyncHandler(async function (req, res) {
+  const managers = await User.aggregate([
     {
       $match: {
         role: "Manager",
@@ -420,8 +421,8 @@ let getManagersWithLQs = asyncHandler(async function (req, res) {
 // 2️⃣ GET managers WITHOUT assigned Lead Qualifiers
 // ==================================================
 // GET /api/superadmin/managers/without-lqs
-let getManagersWithoutLQs = asyncHandler(async function (req, res) {
-  let managers = await User.aggregate([
+const getManagersWithoutLQs = asyncHandler(async function (req, res) {
+  const managers = await User.aggregate([
     {
       $match: {
         role: "Manager",
@@ -465,8 +466,8 @@ let getManagersWithoutLQs = asyncHandler(async function (req, res) {
 // 3️⃣ GET Lead Qualifiers NOT assigned to any manager
 // ==================================================
 // GET /api/superadmin/lead-qualifiers/unassigned
-let getUnassignedLeadQualifiers = asyncHandler(async function (req, res) {
-  let lqs = await User.find({
+const getUnassignedLeadQualifiers = asyncHandler(async function (req, res) {
+  const lqs = await User.find({
     role: "Lead Qualifiers",
     status: constants.userStatus.APPROVED,
     $or: [{ reportsTo: null }, { reportsTo: { $exists: false } }],
@@ -491,8 +492,8 @@ let getUnassignedLeadQualifiers = asyncHandler(async function (req, res) {
 // ==================================================
 // PATCH /api/superadmin/managers/:managerId/assign-lqs
 // body: { lqIds: [] }
-let assignLqsToManager = asyncHandler(async function (req, res, next) {
-  let managerId = req.params.managerId;
+const assignLqsToManager = asyncHandler(async function (req, res, next) {
+  const managerId = req.params.managerId;
 
   if (!isValidObjectId(managerId)) {
     return next(httpError(statusCodes.BAD_REQUEST, "Invalid managerId"));
@@ -505,7 +506,7 @@ let assignLqsToManager = asyncHandler(async function (req, res, next) {
     return next(httpError(statusCodes.BAD_REQUEST, "lqIds array is required"));
   }
 
-  let manager = await User.findOne({
+  const manager = await User.findOne({
     _id: managerId,
     role: "Manager",
     status: constants.userStatus.APPROVED,
@@ -515,7 +516,7 @@ let assignLqsToManager = asyncHandler(async function (req, res, next) {
     return next(httpError(statusCodes.BAD_REQUEST, "Manager not found"));
   }
 
-  let result = await User.updateMany(
+  const result = await User.updateMany(
     {
       _id: { $in: lqIds },
       role: "Lead Qualifiers",
@@ -537,7 +538,7 @@ let assignLqsToManager = asyncHandler(async function (req, res, next) {
 // ==================================================
 // PATCH /api/superadmin/lead-qualifiers/unassign
 // body: { lqIds: [] }
-let unassignLqs = asyncHandler(async function (req, res, next) {
+const unassignLqs = asyncHandler(async function (req, res, next) {
   let lqIds = Array.isArray(req.body?.lqIds) ? req.body.lqIds : [];
   lqIds = lqIds.map(String).filter(Boolean);
 
@@ -545,7 +546,7 @@ let unassignLqs = asyncHandler(async function (req, res, next) {
     return next(httpError(statusCodes.BAD_REQUEST, "lqIds array is required"));
   }
 
-  let result = await User.updateMany(
+  const result = await User.updateMany(
     {
       _id: { $in: lqIds },
       role: "Lead Qualifiers",

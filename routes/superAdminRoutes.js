@@ -1,12 +1,12 @@
-let express = require("express");
-let router = express.Router();
+const express = require("express");
+const router = express.Router();
 
 // Middlewares
-let requireAuth = require("../middlewares/requireAuth");
-let requireRole = require("../middlewares/requireRole");
+const requireAuth = require("../middlewares/requireAuth");
+const requireRole = require("../middlewares/requireRole");
 
 // Controller
-let superAdminController = require("../controllers/superAdminController");
+const superAdminController = require("../controllers/superAdminController");
 
 // ---------------------------------------------------------
 // DASHBOARD & ANALYTICS

@@ -1,9 +1,9 @@
-let express = require("express");
-let router = express.Router();
+const express = require("express");
+const router = express.Router();
 
-let requireAuth = require("../middlewares/requireAuth");
-let requireRole = require("../middlewares/requireRole");
-let managerController = require("../controllers/managerController");
+const requireAuth = require("../middlewares/requireAuth");
+const requireRole = require("../middlewares/requireRole");
+const managerController = require("../controllers/managerController");
 
 // Apply middleware to all routes in this router to keep it DRY
 router.use(requireAuth);

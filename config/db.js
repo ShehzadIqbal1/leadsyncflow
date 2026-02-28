@@ -1,7 +1,7 @@
-let mongoose = require("mongoose");
+const mongoose = require("mongoose");
 
 module.exports = async function connectDb() {
-  let uri = process.env.MONGO_URI;
+  const uri = process.env.MONGO_URI;
   if (!uri) {
     throw new Error("MONGO_URI is missing");
   }

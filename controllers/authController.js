@@ -1,11 +1,11 @@
-let bcrypt = require("bcryptjs");
-let User = require("../models/User");
+const bcrypt = require("bcryptjs");
+const User = require("../models/User");
 
-let statusCodes = require("../utils/statusCodes");
-let httpError = require("../utils/httpError");
-let asyncHandler = require("../middlewares/asyncHandler");
-let constants = require("../utils/constants");
-let tokenService = require("../utils/tokenService");
+const statusCodes = require("../utils/statusCodes");
+const httpError = require("../utils/httpError");
+const asyncHandler = require("../middlewares/asyncHandler");
+const constants = require("../utils/constants");
+const tokenService = require("../utils/tokenService");
 
 function safeString(value) {
   if (value === undefined || value === null) return "";
@@ -25,7 +25,7 @@ function isValidEmail(email) {
 }
 
 function isAllowedCompanyEmail(email) {
-  let domain = "@globaldigitsolutions.com";
+  const domain = "@globaldigitsolutions.com";
   if (!email) return false;
   return String(email).toLowerCase().endsWith(domain);
 }
@@ -36,7 +36,7 @@ function isInList(value, list) {
 }
 
 function getSaltRounds() {
-  let rounds = parseInt(process.env.BCRYPT_SALT_ROUNDS || "10", 10);
+  const rounds = parseInt(process.env.BCRYPT_SALT_ROUNDS || "10", 10);
   if (!rounds || isNaN(rounds)) return 10;
   if (rounds < 8) return 10;
   if (rounds > 14) return 12;
@@ -46,7 +46,7 @@ function getSaltRounds() {
 function validateSignupInput(body) {
   if (!body) return { ok: false, message: "Invalid request body" };
 
-  let data = {
+  const data = {
     name: safeString(body.name),
     email: safeEmail(body.email),
     sex: safeLower(body.sex),
@@ -89,7 +89,7 @@ function validateSignupInput(body) {
 function validateLoginInput(body) {
   if (!body) return { ok: false, message: "Invalid request body" };
 
-  let data = {
+  const data = {
     email: safeEmail(body.email),
     password: body.password ? String(body.password) : "",
   };
@@ -106,20 +106,20 @@ function validateLoginInput(body) {
   return { ok: true, data: data };
 }
 
-let signup = asyncHandler(async function (req, res, next) {
-  let validation = validateSignupInput(req.body);
+const signup = asyncHandler(async function (req, res, next) {
+  const validation = validateSignupInput(req.body);
   if (!validation.ok)
     return next(httpError(statusCodes.BAD_REQUEST, validation.message));
 
-  let data = validation.data;
+  const data = validation.data;
 
-  let existing = await User.findOne({ email: data.email }).select("_id");
+  const existing = await User.findOne({ email: data.email }).select("_id");
   if (existing)
     return next(httpError(statusCodes.CONFLICT, "Email already registered"));
 
-  let passwordHash = await bcrypt.hash(data.password, getSaltRounds());
+  const passwordHash = await bcrypt.hash(data.password, getSaltRounds());
 
-  let user = await User.create({
+  const user = await User.create({
     name: data.name,
     email: data.email,
     sex: data.sex,
@@ -144,14 +144,14 @@ let signup = asyncHandler(async function (req, res, next) {
   });
 });
 
-let login = asyncHandler(async function (req, res, next) {
-  let validation = validateLoginInput(req.body);
+const login = asyncHandler(async function (req, res, next) {
+  const validation = validateLoginInput(req.body);
   if (!validation.ok)
     return next(httpError(statusCodes.BAD_REQUEST, validation.message));
 
-  let data = validation.data;
+  const data = validation.data;
 
-  let user = await User.findOne({ email: data.email }).select(
+  const user = await User.findOne({ email: data.email }).select(
     "name email passwordHash status role department sex profileImage",
   );
   if (!user)
@@ -164,11 +164,11 @@ let login = asyncHandler(async function (req, res, next) {
     );
   }
 
-  let ok = await bcrypt.compare(data.password, user.passwordHash);
+  const ok = await bcrypt.compare(data.password, user.passwordHash);
   if (!ok)
     return next(httpError(statusCodes.UNAUTHORIZED, "Invalid credentials"));
 
-  let token = tokenService.signAuthToken(user._id);
+  const token = tokenService.signAuthToken(user._id);
 
   res.status(statusCodes.OK).json({
     success: true,
@@ -189,7 +189,7 @@ let login = asyncHandler(async function (req, res, next) {
 });
 
 // Stateless logout: frontend removes token
-let logout = function (req, res) {
+const logout = function (req, res) {
   res.status(statusCodes.OK).json({ success: true, message: "Logged out" });
 };
 

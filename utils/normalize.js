@@ -3,14 +3,14 @@ function normalizeEmail(email) {
 }
 
 function emailLocalPart(email) {
-  let e = normalizeEmail(email);
-  let at = e.indexOf("@");
+  const e = normalizeEmail(email);
+  const at = e.indexOf("@");
   if (at === -1) return "";
   return e.slice(0, at);
 }
 
 function normalizePhone(phone) {
-  let p = String(phone || "").trim();
+  const p = String(phone || "").trim();
   return p.replace(/[^\d]/g, "");
 }
 

@@ -1,11 +1,11 @@
-let mongoose = require("mongoose");
-let Lead = require("../models/Lead");
-let User = require("../models/User");
-let normalize = require("../utils/normalize");
-let statusCodes = require("../utils/statusCodes");
-let httpError = require("../utils/httpError");
-let asyncHandler = require("../middlewares/asyncHandler");
-let { getPktDateTime, buildPktRange } = require("../utils/pktDate");
+const mongoose = require("mongoose");
+const Lead = require("../models/Lead");
+const User = require("../models/User");
+const normalize = require("../utils/normalize");
+const statusCodes = require("../utils/statusCodes");
+const httpError = require("../utils/httpError");
+const asyncHandler = require("../middlewares/asyncHandler");
+const { getPktDateTime, buildPktRange } = require("../utils/pktDate");
 
 // ---------------------------------------------
 // Helpers
@@ -21,7 +21,7 @@ function isValidLqStatus(s) {
 // ---------------------------------------------
 // GET /api/lq/leads
 // ---------------------------------------------
-let getMyLeads = asyncHandler(async function (req, res, next) {
+const getMyLeads = asyncHandler(async function (req, res, next) {
   let limit = parseInt(req.query.limit || "20", 10);
   let skip = parseInt(req.query.skip || "0", 10);
 
@@ -29,19 +29,19 @@ let getMyLeads = asyncHandler(async function (req, res, next) {
   if (limit > 100) limit = 100;
   if (isNaN(skip) || skip < 0) skip = 0;
 
-  let lqStatus = String(req.query.lqStatus || "")
+  const lqStatus = String(req.query.lqStatus || "")
     .trim()
     .toUpperCase();
-  let allowed = ["PENDING", "REACHED", "DEAD", "QUALIFIED", "ALL", ""];
+  const allowed = ["PENDING", "REACHED", "DEAD", "QUALIFIED", "ALL", ""];
   if (!allowed.includes(lqStatus)) {
     return next(httpError(statusCodes.BAD_REQUEST, "Invalid lqStatus filter"));
   }
 
-  let today = String(req.query.today || "")
+  const today = String(req.query.today || "")
     .trim()
     .toLowerCase();
-  let from = String(req.query.from || "").trim();
-  let to = String(req.query.to || "").trim();
+  const from = String(req.query.from || "").trim();
+  const to = String(req.query.to || "").trim();
 
   let dateFilter;
   try {
@@ -52,7 +52,7 @@ let getMyLeads = asyncHandler(async function (req, res, next) {
     );
   }
 
-  let baseQuery = {
+  const baseQuery = {
     stage: "LQ",
     assignedTo: req.user.id,
   };
@@ -61,16 +61,16 @@ let getMyLeads = asyncHandler(async function (req, res, next) {
     baseQuery.assignedAt = dateFilter;
   }
 
-  let listQuery = { ...baseQuery };
+  const listQuery = { ...baseQuery };
   if (lqStatus && lqStatus !== "ALL") {
     listQuery.lqStatus = lqStatus;
   }
 
-  let projection =
+  const projection =
     "name location emails phones sources stage status lqStatus comments submittedDate submittedTime assignedAt createdAt";
 
-  let current_page = Math.floor(skip / limit) + 1;
-  let [leads, total_records, countsAgg] = await Promise.all([
+  const current_page = Math.floor(skip / limit) + 1;
+  const [leads, total_records, countsAgg] = await Promise.all([
     Lead.find(listQuery)
       .sort({ assignedAt: 1})
       .skip(skip)
@@ -91,7 +91,7 @@ let getMyLeads = asyncHandler(async function (req, res, next) {
     ]),
   ]);
 
-  let counts_by_status = {
+  const counts_by_status = {
     ALL: 0,
     PENDING: 0,
     REACHED: 0,
@@ -100,7 +100,7 @@ let getMyLeads = asyncHandler(async function (req, res, next) {
   };
 
   countsAgg.forEach((row) => {
-    let key = String(row._id || "").toUpperCase();
+    const key = String(row._id || "").toUpperCase();
     if (counts_by_status[key] !== undefined) {
       counts_by_status[key] = row.count;
       counts_by_status.ALL += row.count;
@@ -126,9 +126,9 @@ let getMyLeads = asyncHandler(async function (req, res, next) {
 // PATCH /api/lq/leads/:leadId/status
 // body: { lqStatus }
 // ---------------------------------------------
-let updateLqStatus = asyncHandler(async function (req, res, next) {
-  let leadId = req.params.leadId;
-  let lqStatus = String((req.body && req.body.lqStatus) || "")
+const updateLqStatus = asyncHandler(async function (req, res, next) {
+  const leadId = req.params.leadId;
+  const lqStatus = String((req.body && req.body.lqStatus) || "")
     .trim()
     .toUpperCase();
 
@@ -140,7 +140,7 @@ let updateLqStatus = asyncHandler(async function (req, res, next) {
     return next(httpError(statusCodes.BAD_REQUEST, "Invalid lqStatus"));
   }
 
-  let lead = await Lead.findOne({
+  const lead = await Lead.findOne({
     _id: leadId,
     stage: "LQ",
     assignedTo: req.user.id,
@@ -169,9 +169,9 @@ let updateLqStatus = asyncHandler(async function (req, res, next) {
 // POST /api/lq/leads/:leadId/comment
 // body: { text }
 // ---------------------------------------------
-let addComment = asyncHandler(async function (req, res, next) {
-  let leadId = req.params.leadId;
-  let text = String((req.body && req.body.text) || "").trim();
+const addComment = asyncHandler(async function (req, res, next) {
+  const leadId = req.params.leadId;
+  const text = String((req.body && req.body.text) || "").trim();
 
   if (!isValidObjectId(leadId)) {
     return next(httpError(statusCodes.BAD_REQUEST, "Invalid leadId"));
@@ -185,7 +185,7 @@ let addComment = asyncHandler(async function (req, res, next) {
     return next(httpError(statusCodes.BAD_REQUEST, "Comment too long"));
   }
 
-  let lead = await Lead.findOne({
+  const lead = await Lead.findOne({
     _id: leadId,
     stage: "LQ",
     assignedTo: req.user.id,
@@ -197,7 +197,7 @@ let addComment = asyncHandler(async function (req, res, next) {
     );
   }
 
-  let pkt = getPktDateTime();
+  const pkt = getPktDateTime();
 
   lead.comments.push({
     text: text,
@@ -221,8 +221,8 @@ let addComment = asyncHandler(async function (req, res, next) {
 });
 
 //submit qualified lead to manager (multi-contact)
-let submitToMyManager = asyncHandler(async function (req, res, next) {
-  let leadId = req.params.leadId;
+const submitToMyManager = asyncHandler(async function (req, res, next) {
+  const leadId = req.params.leadId;
 
   if (!isValidObjectId(leadId)) {
     return next(httpError(statusCodes.BAD_REQUEST, "Invalid leadId"));
@@ -260,7 +260,7 @@ let submitToMyManager = asyncHandler(async function (req, res, next) {
   }
 
   // 1) Find this LQ user + their manager mapping
-  let lqUser = await User.findById(req.user.id).select("reportsTo role status");
+  const lqUser = await User.findById(req.user.id).select("reportsTo role status");
   if (!lqUser) {
     return next(httpError(statusCodes.NOT_FOUND, "User not found"));
   }
@@ -275,7 +275,7 @@ let submitToMyManager = asyncHandler(async function (req, res, next) {
   }
 
   // 2) Verify manager exists + approved
-  let manager = await User.findOne({
+  const manager = await User.findOne({
     _id: lqUser.reportsTo,
     role: "Manager",
     status: "APPROVED",
@@ -291,7 +291,7 @@ let submitToMyManager = asyncHandler(async function (req, res, next) {
   }
 
   // 3) Fetch lead (need emails/phones to filter)
-  let lead = await Lead.findOne({
+  const lead = await Lead.findOne({
     _id: leadId,
     stage: "LQ",
     assignedTo: req.user.id,
@@ -318,11 +318,11 @@ let submitToMyManager = asyncHandler(async function (req, res, next) {
   // ---------------------------------------------
   // 5) Filter Emails (keep only selected normalized)
   // ---------------------------------------------
-  let existingEmails = Array.isArray(lead.emails) ? lead.emails : [];
-  let selectedEmailSet = new Set(selectedEmails);
+  const existingEmails = Array.isArray(lead.emails) ? lead.emails : [];
+  const selectedEmailSet = new Set(selectedEmails);
 
-  let filteredEmails = existingEmails.filter(function (e) {
-    let n = String((e && e.normalized) || "")
+  const filteredEmails = existingEmails.filter(function (e) {
+    const n = String((e && e.normalized) || "")
       .trim()
       .toLowerCase();
     return n && selectedEmailSet.has(n);
@@ -333,27 +333,27 @@ let submitToMyManager = asyncHandler(async function (req, res, next) {
   // - selectedPhones is raw input; validate existence via raw or normalized
   // - overwrite BOTH phones and phonesNormalized with only selected ones
   // ---------------------------------------------
-  let existingPhones = Array.isArray(lead.phones) ? lead.phones : [];
-  let existingPhonesNorm = Array.isArray(lead.phonesNormalized)
+  const existingPhones = Array.isArray(lead.phones) ? lead.phones : [];
+  const existingPhonesNorm = Array.isArray(lead.phonesNormalized)
     ? lead.phonesNormalized
     : [];
 
   // build fast lookup sets
-  let existingRawSet = new Set(
+  const existingRawSet = new Set(
     existingPhones.map((p) => String(p || "").trim()),
   );
-  let existingNormSet = new Set(
+  const existingNormSet = new Set(
     existingPhonesNorm.map((p) => String(p || "").trim()),
   );
 
-  let filteredPhones = [];
-  let filteredPhonesNormalized = [];
+  const filteredPhones = [];
+  const filteredPhonesNormalized = [];
 
   for (let i = 0; i < selectedPhones.length; i++) {
-    let raw = String(selectedPhones[i] || "").trim();
+    const raw = String(selectedPhones[i] || "").trim();
     if (!raw) continue;
 
-    let pNorm = normalize.normalizePhone(raw);
+    const pNorm = normalize.normalizePhone(raw);
     if (!pNorm) {
       return next(
         httpError(statusCodes.BAD_REQUEST, "Invalid phone in selectedPhones"),
@@ -361,7 +361,7 @@ let submitToMyManager = asyncHandler(async function (req, res, next) {
     }
 
     // must belong to THIS lead
-    let belongs =
+    const belongs =
       existingRawSet.has(raw) ||
       existingNormSet.has(String(pNorm || "").trim());
 
@@ -396,13 +396,13 @@ let submitToMyManager = asyncHandler(async function (req, res, next) {
   // - email/phone primary = first item of selected arrays (if exists)
   // - responseSource uses first valid filtered item
   // ---------------------------------------------
-  let pkt = getPktDateTime();
+  const pkt = getPktDateTime();
 
-  let responseSource = {};
+  const responseSource = {};
 
   // Primary email (first filtered email)
   if (filteredEmails.length) {
-    let primaryEmail = filteredEmails[0];
+    const primaryEmail = filteredEmails[0];
     responseSource.email = {
       value: String(primaryEmail.value || ""),
       normalized: String(primaryEmail.normalized || ""),
@@ -415,8 +415,8 @@ let submitToMyManager = asyncHandler(async function (req, res, next) {
 
   // Primary phone (first filtered phone)
   if (filteredPhones.length) {
-    let primaryPhone = filteredPhones[0];
-    let primaryPhoneNorm = filteredPhonesNormalized[0];
+    const primaryPhone = filteredPhones[0];
+    const primaryPhoneNorm = filteredPhonesNormalized[0];
 
     responseSource.phone = {
       value: String(primaryPhone || ""),
@@ -466,10 +466,10 @@ let submitToMyManager = asyncHandler(async function (req, res, next) {
 // GET /api/lq/stats
 // PERFORMANCE-BASED STATS
 // ---------------------------------------------
-let getMyStats = asyncHandler(async function (req, res, next) {
-  let today = String(req.query.today || "").trim().toLowerCase();
-  let from = String(req.query.from || "").trim();
-  let to = String(req.query.to || "").trim();
+const getMyStats = asyncHandler(async function (req, res, next) {
+  const today = String(req.query.today || "").trim().toLowerCase();
+  const from = String(req.query.from || "").trim();
+  const to = String(req.query.to || "").trim();
 
   let range;
   try {
@@ -478,9 +478,9 @@ let getMyStats = asyncHandler(async function (req, res, next) {
     return next(httpError(statusCodes.BAD_REQUEST, "Invalid date format"));
   }
 
-  let userId = new mongoose.Types.ObjectId(req.user.id);
+  const userId = new mongoose.Types.ObjectId(req.user.id);
 
-  let pipeline = [
+  const pipeline = [
     {
       $match: {
         assignedTo: userId, // Match leads assigned to this user
@@ -516,9 +516,9 @@ let getMyStats = asyncHandler(async function (req, res, next) {
     { $project: { _id: 0 } },
   ];
 
-  let result = await Lead.aggregate(pipeline);
+  const result = await Lead.aggregate(pipeline);
 
-  let stats = result[0] || {
+  const stats = result[0] || {
     totalReceived: 0,
     pending: 0,
     qualified: 0,

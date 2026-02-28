@@ -1,7 +1,7 @@
 // models/Lead.js
-let mongoose = require("mongoose");
+const mongoose = require("mongoose");
 
-let SourceSchema = new mongoose.Schema(
+const SourceSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
     link: { type: String, required: true, trim: true },
@@ -9,7 +9,7 @@ let SourceSchema = new mongoose.Schema(
   { _id: false },
 );
 
-let EmailSchema = new mongoose.Schema(
+const EmailSchema = new mongoose.Schema(
   {
     value: { type: String, required: true, trim: true }, // raw
     normalized: { type: String, required: true, trim: true }, // full normalized email
@@ -24,7 +24,7 @@ let EmailSchema = new mongoose.Schema(
   { _id: false },
 );
 
-let CommentSchema = new mongoose.Schema(
+const CommentSchema = new mongoose.Schema(
   {
     text: { type: String, required: true, trim: true },
     createdBy: {
@@ -40,7 +40,7 @@ let CommentSchema = new mongoose.Schema(
   { _id: false },
 );
 
-let ResponsePickSchema = new mongoose.Schema(
+const ResponsePickSchema = new mongoose.Schema(
   {
     value: { type: String, trim: true, default: "" },
     normalized: { type: String, trim: true, default: "" },
@@ -52,7 +52,7 @@ let ResponsePickSchema = new mongoose.Schema(
   { _id: false },
 );
 
-let ResponseSourceSchema = new mongoose.Schema(
+const ResponseSourceSchema = new mongoose.Schema(
   {
     email: { type: ResponsePickSchema, default: undefined },
     phone: { type: ResponsePickSchema, default: undefined },
@@ -60,7 +60,7 @@ let ResponseSourceSchema = new mongoose.Schema(
   { _id: false },
 );
 
-let LeadSchema = new mongoose.Schema(
+const LeadSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
 

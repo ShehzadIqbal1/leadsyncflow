@@ -1,10 +1,10 @@
 // controllers/managerController.js
 
-let mongoose = require("mongoose");
-let Lead = require("../models/Lead");
-let statusCodes = require("../utils/statusCodes");
-let httpError = require("../utils/httpError");
-let asyncHandler = require("../middlewares/asyncHandler");
+const mongoose = require("mongoose");
+const Lead = require("../models/Lead");
+const statusCodes = require("../utils/statusCodes");
+const httpError = require("../utils/httpError");
+const asyncHandler = require("../middlewares/asyncHandler");
 
 // Import the PKT utility
 const { getPktDateTime } = require("../utils/pktDate");
@@ -17,8 +17,8 @@ function isValidObjectId(id) {
 // GET /api/manager/leads?limit=20&skip=0
 // Returns leads assigned to THIS manager in MANAGER stage with priority for super-admin returned leads
 // --------------------------------------------------
-let getMyAssignedLeads = asyncHandler(async function (req, res, next) {
-  let managerId = req.user.id;
+const getMyAssignedLeads = asyncHandler(async function (req, res, next) {
+  const managerId = req.user.id;
 
   // 1. Parse and validate pagination inputs
   let limit = parseInt(req.query.limit || "20", 10);
@@ -33,7 +33,7 @@ let getMyAssignedLeads = asyncHandler(async function (req, res, next) {
     stage: "MANAGER",
   };
 
-  let [leads, totalLeads] = await Promise.all([
+  const [leads, totalLeads] = await Promise.all([
     Lead.find(filter)
       .sort({
         superAdminReturnPriorityUntil: -1, // Priority for 24hr returned leads
@@ -58,18 +58,18 @@ let getMyAssignedLeads = asyncHandler(async function (req, res, next) {
 });
 
 // REQUEST REJECTION (NO DIRECT REJECTION ANYMORE)
-let requestRejection = asyncHandler(async function (req, res, next) {
-  let leadId = req.params.id;
+const requestRejection = asyncHandler(async function (req, res, next) {
+  const leadId = req.params.id;
   if (!isValidObjectId(leadId)) {
     return next(httpError(statusCodes.BAD_REQUEST, "Invalid leadId"));
   }
 
-  let comment = String((req.body && req.body.comment) || "").trim();
+  const comment = String((req.body && req.body.comment) || "").trim();
   if (!comment) {
     return next(httpError(statusCodes.BAD_REQUEST, "Comment is required"));
   }
 
-  let lead = await Lead.findOne({
+  const lead = await Lead.findOne({
     _id: leadId,
     assignedTo: req.user.id,
     stage: "MANAGER",
@@ -103,15 +103,15 @@ let requestRejection = asyncHandler(async function (req, res, next) {
 });
 
 // UPSALE + PAYMENT
-let updatePaymentStatus = asyncHandler(async function (req, res, next) {
-  let leadId = req.params.id;
+const updatePaymentStatus = asyncHandler(async function (req, res, next) {
+  const leadId = req.params.id;
 
   if (!isValidObjectId(leadId)) {
     return next(httpError(statusCodes.BAD_REQUEST, "Invalid leadId"));
   }
 
-  let amount = Number(req.body.amount);
-  let comment = String(req.body.comment || "").trim();
+  const amount = Number(req.body.amount);
+  const comment = String(req.body.comment || "").trim();
 
   if (!amount || amount <= 0) {
     return next(httpError(statusCodes.BAD_REQUEST, "Valid amount required"));
@@ -121,7 +121,7 @@ let updatePaymentStatus = asyncHandler(async function (req, res, next) {
     return next(httpError(statusCodes.BAD_REQUEST, "Comment is required"));
   }
 
-  let lead = await Lead.findOne({
+  const lead = await Lead.findOne({
     _id: leadId,
     assignedTo: req.user.id,
     stage: "MANAGER",
@@ -149,7 +149,7 @@ let updatePaymentStatus = asyncHandler(async function (req, res, next) {
   lead.status = "PAID";
 
   // calculate total
-  let totalUpsellAmount = lead.upsales.reduce(
+  const totalUpsellAmount = lead.upsales.reduce(
     (sum, u) => sum + (u.amount || 0),
     0,
   );

@@ -1,5 +1,5 @@
-let cloudinary = require('cloudinary').v2;
-let streamifier = require('streamifier');
+const cloudinary = require('cloudinary').v2;
+const streamifier = require('streamifier');
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -9,7 +9,7 @@ cloudinary.config({
 
 function uploadBuffer(buffer, folderName) {
   return new Promise(function (resolve, reject) {
-    let stream = cloudinary.uploader.upload_stream(
+    const stream = cloudinary.uploader.upload_stream(
       {
         folder: folderName || 'leadsyncflow_profiles',
         resource_type: 'image'

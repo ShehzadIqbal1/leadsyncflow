@@ -1,19 +1,19 @@
-let express = require("express");
-let cors = require("cors");
+const express = require("express");
+const cors = require("cors");
 require("dotenv").config();
 
-let connectDb = require("./config/db");
-let errorHandler = require("./middlewares/errorHandler");
+const connectDb = require("./config/db");
+const errorHandler = require("./middlewares/errorHandler");
 
-let authRoutes = require("./routes/authRoutes");
-let superAdminRoutes = require("./routes/superAdminRoutes");
-let dataMinorRoutes = require("./routes/dataMinorRoutes");
-let verifierRoutes = require("./routes/verifierRoutes");
-let leadQualifierRoutes = require("./routes/leadQualifierRoutes");
-let managerRoutes = require("./routes/managerRoutes");
-let bootstrapSuperAdmin = require("./scripts/bootstrapSuperAdmin");
+const authRoutes = require("./routes/authRoutes");
+const superAdminRoutes = require("./routes/superAdminRoutes");
+const dataMinorRoutes = require("./routes/dataMinorRoutes");
+const verifierRoutes = require("./routes/verifierRoutes");
+const leadQualifierRoutes = require("./routes/leadQualifierRoutes");
+const managerRoutes = require("./routes/managerRoutes");
+const bootstrapSuperAdmin = require("./scripts/bootstrapSuperAdmin");
 
-let app = express();
+const app = express();
 
 //Middlewares
 app.use(cors());
@@ -34,7 +34,7 @@ app.use("/api/manager", managerRoutes);
 
 app.use(errorHandler);
 
-let port = process.env.PORT || 5000;
+const port = process.env.PORT || 5000;
 
 async function startServer() {
   try {
