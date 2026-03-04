@@ -100,4 +100,25 @@ router.patch(
   superAdminController.unassignLqs
 );
 
+// ---------------------------------------------------------
+// REJECTION MANAGEMENT
+// Allowed for: Super Admin, Admin
+// ---------------------------------------------------------
+
+// Get all rejection requests from managers
+router.get(
+  "/rejection-requests",
+  requireAuth,
+  requireRole(["Super Admin", "Admin"]),
+  superAdminController.getRejectionRequests
+);
+
+// Make decision (APPROVE / REJECT)
+router.patch(
+  "/rejection-requests/:id/decision",
+  requireAuth,
+  requireRole(["Super Admin", "Admin"]),
+  superAdminController.decideRejectionRequest
+);
+
 module.exports = router;

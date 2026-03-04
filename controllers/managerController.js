@@ -164,8 +164,25 @@ const updatePaymentStatus = asyncHandler(async function (req, res, next) {
   });
 });
 
+// GET /api/manager/rejections-approved
+const getApprovedRejections = asyncHandler(async function (req, res) {
+  const leads = await Lead.find({
+    assignedTo: req.user.id,
+    stage: "REJECTED",
+  })
+    .sort({ updatedAt: -1 })
+    .populate("createdBy", "name email role");
+
+  return res.status(statusCodes.OK).json({
+    success: true,
+    count: leads.length,
+    leads,
+  });
+});
+
 module.exports = {
-  getMyAssignedLeads: getMyAssignedLeads,
-  requestRejection: requestRejection,
-  updatePaymentStatus: updatePaymentStatus,
+  getMyAssignedLeads,
+  requestRejection,
+  updatePaymentStatus,
+  getApprovedRejections,
 };

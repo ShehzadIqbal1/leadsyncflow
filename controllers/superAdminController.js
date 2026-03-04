@@ -562,6 +562,116 @@ const unassignLqs = asyncHandler(async function (req, res, next) {
   });
 });
 
+
+
+// GET /api/superadmin/rejection-requests
+const getRejectionRequests = asyncHandler(async function (req, res) {
+
+  const leads = await Lead.find({
+    rejectionRequested: true,
+  })
+    .sort({ rejectionRequestedAt: -1 })
+    .populate("createdBy", "name email role")
+    .populate("assignedTo", "name email role")
+    .populate("rejectionRequestedBy", "name email role");
+
+  return res.status(statusCodes.OK).json({
+    success: true,
+    count: leads.length,
+    leads,
+  });
+});
+
+// PATCH /api/superadmin/rejection-requests/:id/decision
+const decideRejectionRequest = asyncHandler(async function (req, res, next) {
+
+  const { id: leadId } = req.params;
+  const { decision, comment } = req.body;
+
+  if (!isValidObjectId(leadId)) {
+    return next(httpError(statusCodes.BAD_REQUEST, "Invalid leadId"));
+  }
+
+  const allowedDecisions = ["APPROVE", "REJECT"];
+
+  if (!decision || !allowedDecisions.includes(String(decision).toUpperCase())) {
+    return next(
+      httpError(
+        statusCodes.BAD_REQUEST,
+        "Decision must be APPROVE or REJECT"
+      )
+    );
+  }
+
+  const lead = await Lead.findOne({
+    _id: leadId,
+    rejectionRequested: true,
+  });
+
+  if (!lead) {
+    return next(
+      httpError(statusCodes.NOT_FOUND, "Rejection request not found")
+    );
+  }
+
+  const now = new Date();
+  const upperDecision = decision.toUpperCase();
+
+  // ----------------------------------------
+  // CASE 1: SUPER ADMIN APPROVES REJECTION
+  // ----------------------------------------
+  if (upperDecision === "APPROVE") {
+
+    lead.stage = "REJECTED";
+
+    // Keep assignedTo for visibility history
+    // Do NOT unset assignedTo unless your system requires it
+
+    lead.rejectionRequested = false;
+    lead.superAdminReturnPriorityUntil = null;
+
+    lead.rejectionApprovedAt = now;
+    lead.rejectionApprovedBy = req.user.id;
+
+    if (comment) {
+      lead.rejectionDecisionComment = String(comment).trim();
+    }
+
+  }
+
+  // ----------------------------------------
+  // CASE 2: SUPER ADMIN REJECTS REQUEST
+  // ----------------------------------------
+  if (upperDecision === "REJECT") {
+
+    // Return to manager with 24h priority
+    lead.rejectionRequested = false;
+
+    lead.superAdminReturnPriorityUntil = new Date(
+      now.getTime() + 24 * 60 * 60 * 1000
+    );
+
+    lead.rejectionRejectedAt = now;
+    lead.rejectionRejectedBy = req.user.id;
+
+    if (comment) {
+      lead.rejectionDecisionComment = String(comment).trim();
+    }
+
+    // Stage remains MANAGER
+  }
+
+  await lead.save();
+
+  return res.status(statusCodes.OK).json({
+    success: true,
+    message:
+      upperDecision === "APPROVE"
+        ? "Rejection approved successfully"
+        : "Rejection request rejected and returned to manager with 24hr priority",
+  });
+});
+
 // --- Final Export ---
 module.exports = {
   getOverview,
@@ -575,4 +685,6 @@ module.exports = {
   getUnassignedLeadQualifiers,
   assignLqsToManager,
   unassignLqs,
+  getRejectionRequests,
+  decideRejectionRequest
 };
