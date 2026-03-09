@@ -163,25 +163,79 @@ const liveDuplicateCheck = asyncHandler(async function (req, res, next) {
 const getMyStats = asyncHandler(async function (req, res, next) {
   const userId = req.user.id;
 
+  const today = String(req.query.today || "").trim().toLowerCase();
+  const from = String(req.query.from || "").trim();
+  const to = String(req.query.to || "").trim();
+
   const pkt = getPktNow();
 
-  const day = pktDayRangeUtc(pkt.pktDate);
-  const month = pktMonthRangeUtc(pkt.pktDate);
+  let range = null;
 
-  const todayCount = await Lead.countDocuments({
-    createdBy: userId,
-    createdAt: { $gte: day.start, $lte: day.end },
-  });
+  function isYmd(s) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(s);
+  }
 
-  const monthCount = await Lead.countDocuments({
+  // ---------------------------------------
+  // TODAY FILTER
+  // ---------------------------------------
+  if (today === "true" || today === "1") {
+    const day = pktDayRangeUtc(pkt.pktDate);
+
+    range = {
+      $gte: day.start,
+      $lte: day.end,
+    };
+  }
+
+  // ---------------------------------------
+  // DATE RANGE FILTER (calendar selection)
+  // ---------------------------------------
+  else if (from || to) {
+    if (from && !isYmd(from)) {
+      return next(httpError(statusCodes.BAD_REQUEST, "Invalid from date"));
+    }
+
+    if (to && !isYmd(to)) {
+      return next(httpError(statusCodes.BAD_REQUEST, "Invalid to date"));
+    }
+
+    range = {};
+
+    if (from) {
+      const start = pktDayRangeUtc(from);
+      range.$gte = start.start;
+    }
+
+    if (to) {
+      const end = pktDayRangeUtc(to);
+      range.$lte = end.end;
+    }
+  }
+
+  // ---------------------------------------
+  // BUILD QUERY
+  // ---------------------------------------
+  const query = {
     createdBy: userId,
-    createdAt: { $gte: month.start, $lt: month.end },
-  });
+  };
+
+  if (range) {
+    query.createdAt = range;
+  }
+
+  // ---------------------------------------
+  // FETCH COUNT
+  // ---------------------------------------
+  const totalCount = await Lead.countDocuments(query);
 
   return res.status(statusCodes.OK).json({
     success: true,
-    todayCount: todayCount,
-    monthCount: monthCount,
+    filters: {
+      today: today === "true" || today === "1",
+      from: from || null,
+      to: to || null,
+    },
+    totalCount: totalCount,
   });
 });
 
