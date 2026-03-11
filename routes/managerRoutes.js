@@ -21,4 +21,7 @@ router.post("/leads/:id/payment-status", managerController.updatePaymentStatus);
 // GET approved rejections (final rejected leads)
 router.get("/rejections-approved", managerController.getApprovedRejections);
 
+//GET stats api 
+router.get("/leads/stats/:managerId", managerController.getManagerStats);
+
 module.exports = router;

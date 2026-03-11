@@ -6,8 +6,7 @@ const statusCodes = require("../utils/statusCodes");
 const httpError = require("../utils/httpError");
 const asyncHandler = require("../middlewares/asyncHandler");
 
-// Import the PKT utility
-const { getPktDateTime } = require("../utils/pktDate");
+const { getPktDateTime, buildPktRange } = require("../utils/pktDate");
 
 function isValidObjectId(id) {
   return mongoose.Types.ObjectId.isValid(String(id || ""));
@@ -179,10 +178,158 @@ const getApprovedRejections = asyncHandler(async function (req, res) {
     leads,
   });
 });
+const getManagerStats = asyncHandler(async function (req, res, next) {
+  const managerId = new mongoose.Types.ObjectId(req.user.id);
+
+  const today = String(req.query.today || "")
+    .trim()
+    .toLowerCase();
+  const from = String(req.query.from || "").trim();
+  const to = String(req.query.to || "").trim();
+
+  let range;
+  try {
+    range = buildPktRange({ today, from, to });
+  } catch (err) {
+    return next(
+      httpError(
+        statusCodes.BAD_REQUEST,
+        "Invalid date format (use YYYY-MM-DD)",
+      ),
+    );
+  }
+
+  const pipeline = [
+    {
+      $match: { assignedTo: managerId }, // Initial filter for all manager leads
+    },
+    {
+      $facet: {
+        // --- Branch 1: Revenue Calculation ---
+        revenueData: [
+          { $unwind: "$upsales" },
+          {
+            $match: Object.assign(
+              { "upsales.addedBy": managerId },
+              range ? { "upsales.addedAt": range } : {},
+            ),
+          },
+          {
+            $group: {
+              _id: null,
+              totalRevenue: { $sum: { $ifNull: ["$upsales.amount", 0] } },
+            },
+          },
+        ],
+        // --- Branch 2: Status Counts ---
+        counts: [
+          {
+            $group: {
+              _id: null,
+              unpaidLeads: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ["$stage", "MANAGER"] },
+                        { $eq: ["$status", "UNPAID"] },
+                        range
+                          ? { $gte: ["$assignedAt", range.$gte || new Date(0)] }
+                          : true,
+                        range
+                          ? { $lte: ["$assignedAt", range.$lte || new Date()] }
+                          : true,
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              rejectionRequestsPending: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ["$stage", "MANAGER"] },
+                        { $eq: ["$rejectionRequested", true] },
+                        range
+                          ? {
+                              $gte: [
+                                "$rejectionRequestedAt",
+                                range.$gte || new Date(0),
+                              ],
+                            }
+                          : true,
+                        range
+                          ? {
+                              $lte: [
+                                "$rejectionRequestedAt",
+                                range.$lte || new Date(),
+                              ],
+                            }
+                          : true,
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              approvedRejections: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ["$stage", "REJECTED"] },
+                        range
+                          ? { $gte: ["$updatedAt", range.$gte || new Date(0)] }
+                          : true,
+                        range
+                          ? { $lte: ["$updatedAt", range.$lte || new Date()] }
+                          : true,
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+            },
+          },
+        ],
+      },
+    },
+  ];
+
+  const [result] = await Lead.aggregate(pipeline);
+
+  // Extract values with defaults
+  const totalRevenue = result.revenueData[0]?.totalRevenue || 0;
+  const stats = result.counts[0] || {
+    unpaidLeads: 0,
+    rejectionRequestsPending: 0,
+    approvedRejections: 0,
+  };
+
+  return res.status(statusCodes.OK).json({
+    success: true,
+    filters: {
+      today: today === "true" || today === "1",
+      from: from || null,
+      to: to || null,
+    },
+    stats: {
+      totalRevenue,
+      ...stats,
+    },
+  });
+});
 
 module.exports = {
   getMyAssignedLeads,
   requestRejection,
   updatePaymentStatus,
   getApprovedRejections,
+  getManagerStats,
 };

@@ -72,7 +72,7 @@ const getMyLeads = asyncHandler(async function (req, res, next) {
   const current_page = Math.floor(skip / limit) + 1;
   const [leads, total_records, countsAgg] = await Promise.all([
     Lead.find(listQuery)
-      .sort({ assignedAt: 1})
+      .sort({ assignedAt: -1 })
       .skip(skip)
       .limit(limit)
       .select(projection)
@@ -260,7 +260,9 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
   }
 
   // 1) Find this LQ user + their manager mapping
-  const lqUser = await User.findById(req.user.id).select("reportsTo role status");
+  const lqUser = await User.findById(req.user.id).select(
+    "reportsTo role status",
+  );
   if (!lqUser) {
     return next(httpError(statusCodes.NOT_FOUND, "User not found"));
   }
@@ -467,7 +469,9 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
 // PERFORMANCE-BASED STATS
 // ---------------------------------------------
 const getMyStats = asyncHandler(async function (req, res, next) {
-  const today = String(req.query.today || "").trim().toLowerCase();
+  const today = String(req.query.today || "")
+    .trim()
+    .toLowerCase();
   const from = String(req.query.from || "").trim();
   const to = String(req.query.to || "").trim();
 
@@ -484,7 +488,7 @@ const getMyStats = asyncHandler(async function (req, res, next) {
     {
       $match: {
         assignedTo: userId, // Match leads assigned to this user
-        stage: "LQ",        // Ensure they are still in the LQ stage
+        stage: "LQ", // Ensure they are still in the LQ stage
         ...(range ? { assignedAt: range } : {}), // Filter by assignment date
       },
     },
@@ -534,9 +538,9 @@ const getMyStats = asyncHandler(async function (req, res, next) {
 });
 
 module.exports = {
-  getMyLeads: getMyLeads,
-  updateLqStatus: updateLqStatus,
-  addComment: addComment,
-  submitToMyManager: submitToMyManager,
-  getMyStats: getMyStats,
+  getMyLeads,
+  updateLqStatus,
+  addComment,
+  submitToMyManager,
+  getMyStats,
 };

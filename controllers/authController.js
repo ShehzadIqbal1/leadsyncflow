@@ -194,7 +194,7 @@ const logout = function (req, res) {
 };
 
 module.exports = {
-  signup: signup,
-  login: login,
-  logout: logout,
+  signup,
+  login,
+  logout,
 };

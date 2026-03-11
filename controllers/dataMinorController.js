@@ -45,8 +45,7 @@ function pktMonthRangeUtc(pktDateStr) {
     nm = 1;
     ny = y + 1;
   }
-  const nextMonthStartStr =
-    ny + "-" + String(nm).padStart(2, "0") + "-01";
+  const nextMonthStartStr = ny + "-" + String(nm).padStart(2, "0") + "-01";
   const end = new Date(nextMonthStartStr + "T00:00:00.000+05:00"); // exclusive
   return { start: start, end: end };
 }
@@ -62,7 +61,7 @@ async function findDuplicates(emailNorms, phoneNorms) {
       ? Lead.distinct("emails.normalized", {
           "emails.normalized": { $in: emailNorms },
         })
-      : Promise.resolve([])
+      : Promise.resolve([]),
   );
 
   tasks.push(
@@ -70,7 +69,7 @@ async function findDuplicates(emailNorms, phoneNorms) {
       ? Lead.distinct("phonesNormalized", {
           phonesNormalized: { $in: phoneNorms },
         })
-      : Promise.resolve([])
+      : Promise.resolve([]),
   );
 
   const results = await Promise.all(tasks);
@@ -163,7 +162,9 @@ const liveDuplicateCheck = asyncHandler(async function (req, res, next) {
 const getMyStats = asyncHandler(async function (req, res, next) {
   const userId = req.user.id;
 
-  const today = String(req.query.today || "").trim().toLowerCase();
+  const today = String(req.query.today || "")
+    .trim()
+    .toLowerCase();
   const from = String(req.query.from || "").trim();
   const to = String(req.query.to || "").trim();
 
@@ -265,8 +266,8 @@ const submitLead = asyncHandler(async function (req, res, next) {
     return next(
       httpError(
         statusCodes.BAD_REQUEST,
-        "No valid email or phone number provided"
-      )
+        "No valid email or phone number provided",
+      ),
     );
   }
 
@@ -298,23 +299,22 @@ const submitLead = asyncHandler(async function (req, res, next) {
   const sources = Array.isArray(data.sources) ? data.sources : [];
   const firstSource = sources.length ? [sources[0]] : [];
 
- const lead = await Lead.create({
-  name: data.name,
-  location: data.location || "",
-  emails: emailObjects,
-  phones: data.phones,
-  phonesNormalized: data.phonesNormalized,
-  sources: firstSource,
+  const lead = await Lead.create({
+    name: data.name,
+    location: data.location || "",
+    emails: emailObjects,
+    phones: data.phones,
+    phonesNormalized: data.phonesNormalized,
+    sources: firstSource,
 
-  //stage logic:
-  stage: emailObjects.length > 0 ? "DM" : "Verifier",
+    //stage logic:
+    stage: emailObjects.length > 0 ? "DM" : "Verifier",
 
-  status: "UNPAID",
-  submittedDate: pkt.pktDate,
-  submittedTime: pkt.pktTime,
-  createdBy: req.user.id,
-});
-
+    status: "UNPAID",
+    submittedDate: pkt.pktDate,
+    submittedTime: pkt.pktTime,
+    createdBy: req.user.id,
+  });
 
   return res.status(statusCodes.CREATED).json({
     success: true,
@@ -326,7 +326,7 @@ const submitLead = asyncHandler(async function (req, res, next) {
 });
 
 module.exports = {
-  liveDuplicateCheck: liveDuplicateCheck,
-  getMyStats: getMyStats,
-  submitLead: submitLead,
+  liveDuplicateCheck,
+  getMyStats,
+  submitLead,
 };
