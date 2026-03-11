@@ -1,4 +1,4 @@
-let constants = {
+const constants = {
   sexOptions: ["male", "female","other"],
 
   departments: [

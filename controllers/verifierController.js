@@ -1,12 +1,12 @@
 // controllers/verifierController.js
-let mongoose = require("mongoose");
-let Lead = require("../models/Lead");
-let Counter = require("../models/Counter");
-let statusCodes = require("../utils/statusCodes");
-let User = require("../models/User");
-let httpError = require("../utils/httpError");
-let asyncHandler = require("../middlewares/asyncHandler");
-let assignmentService = require("../utils/assignmentService");
+const mongoose = require("mongoose");
+const Lead = require("../models/Lead");
+const Counter = require("../models/Counter");
+const statusCodes = require("../utils/statusCodes");
+const User = require("../models/User");
+const httpError = require("../utils/httpError");
+const asyncHandler = require("../middlewares/asyncHandler");
+//const assignmentService = require("../utils/assignmentService");
 
 function isValidEmailStatus(s) {
   return ["ACTIVE", "BOUNCED", "DEAD"].indexOf(s) !== -1;
@@ -18,7 +18,7 @@ function isValidObjectId(id) {
 
 // 1) GET /api/verifier/leads
 // Logic: Strictly get only leads in "DM" stage
-let getDmLeads = asyncHandler(async function (req, res, next) {
+const getDmLeads = asyncHandler(async function (req, res, next) {
   let limit = parseInt(req.query.limit || "20", 10);
   let skip = parseInt(req.query.skip || "0", 10);
 
@@ -47,15 +47,15 @@ let getDmLeads = asyncHandler(async function (req, res, next) {
 });
 // 2) POST /api/verifier/leads/:leadId/update-emails
 // Logic: Processes emails AND handles phone-only leads to move stage to "Verifier"
-let updateEmailStatuses = asyncHandler(async function (req, res, next) {
-  let leadId = req.params.leadId;
+const updateEmailStatuses = asyncHandler(async function (req, res, next) {
+  const leadId = req.params.leadId;
 
   if (!isValidObjectId(leadId)) {
     return next(httpError(statusCodes.BAD_REQUEST, "Invalid leadId"));
   }
 
   // We only fetch leads that ARE in DM stage and HAVE emails
-  let lead = await Lead.findById(leadId).select("stage emails");
+  const lead = await Lead.findById(leadId).select("stage emails");
   if (!lead) return next(httpError(statusCodes.NOT_FOUND, "Lead not found"));
 
   if (lead.stage !== "DM") {
@@ -64,32 +64,32 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
 
   // Since you fixed the submit logic, a DM lead should always have emails.
   // This is now a safety check.
-  let hasEmails = Array.isArray(lead.emails) && lead.emails.length > 0;
+  const hasEmails = Array.isArray(lead.emails) && lead.emails.length > 0;
   if (!hasEmails) {
     return next(httpError(statusCodes.BAD_REQUEST, "This lead has no emails to verify. It should already be in Verifier stage."));
   }
 
-  let incomingArr = Array.isArray(req.body && req.body.emails) ? req.body.emails : [];
+  const incomingArr = Array.isArray(req.body && req.body.emails) ? req.body.emails : [];
   if (!incomingArr.length) {
     return next(httpError(statusCodes.BAD_REQUEST, "Email data is required"));
   }
 
-  let incomingMap = new Map();
-  for (let row of incomingArr) {
-    let norm = String(row.normalized || "").trim().toLowerCase();
-    let status = String(row.status || "").trim().toUpperCase();
+  const incomingMap = new Map();
+  for (const row of incomingArr) {
+    const norm = String(row.normalized || "").trim().toLowerCase();
+    const status = String(row.status || "").trim().toUpperCase();
     if (norm && isValidEmailStatus(status)) {
       incomingMap.set(norm, status);
     }
   }
 
-  let now = new Date();
+  const now = new Date();
   let updatedCount = 0;
   let missingCount = 0;
 
-  for (let e of lead.emails) {
-    let norm = String(e.normalized || "").trim().toLowerCase();
-    let nextStatus = incomingMap.get(norm);
+  for (const e of lead.emails) {
+    const norm = String(e.normalized || "").trim().toLowerCase();
+    const nextStatus = incomingMap.get(norm);
 
     if (!nextStatus) {
       missingCount++;
@@ -124,33 +124,33 @@ let updateEmailStatuses = asyncHandler(async function (req, res, next) {
 
 // 3) POST /api/verifier/leads/move-all-to-lq
 // Logic: Move ALL leads in Verifier stage to LQ stage using optimized bulk operations
-let moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
+const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
   // 1. Get all leads in Verifier stage
-  let leads = await Lead.find({ stage: "Verifier" }).select("_id");
+  const leads = await Lead.find({ stage: "Verifier" }).select("_id");
   if (leads.length === 0)
     return next(httpError(statusCodes.NOT_FOUND, "No leads to move"));
 
   // 2. Fetch all LQs once (Don't call assignmentService inside the loop)
-  let lqs = await User.find({ role: "Lead Qualifiers", status: "APPROVED" })
+  const lqs = await User.find({ role: "Lead Qualifiers", status: "APPROVED" })
     .select("_id")
     .sort({ _id: 1 });
   if (lqs.length === 0)
     return next(httpError(statusCodes.BAD_REQUEST, "No LQs available"));
 
   // 3. Get the starting point for Round-Robin from your Counter
-  let counter = await Counter.findOneAndUpdate(
+  const counter = await Counter.findOneAndUpdate(
     { key: "LQ_ASSIGN" },
     { $inc: { seq: leads.length } }, // Increment by the total number of leads at once
     { new: true, upsert: true },
   );
 
-  let startSeq = counter.seq - leads.length;
-  let now = new Date();
+  const startSeq = counter.seq - leads.length;
+  const now = new Date();
 
   // 4. Prepare Bulk Operations
-  let bulkOps = leads.map((lead, index) => {
-    let lqIndex = (startSeq + index) % lqs.length;
-    let assignedLqId = lqs[lqIndex]._id;
+  const bulkOps = leads.map((lead, index) => {
+    const lqIndex = (startSeq + index) % lqs.length;
+    const assignedLqId = lqs[lqIndex]._id;
 
     return {
       updateOne: {

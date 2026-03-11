@@ -1,8 +1,8 @@
-let bcrypt = require("bcryptjs");
-let User = require("../models/User");
+const bcrypt = require("bcryptjs");
+const User = require("../models/User");
 
 function getSaltRounds() {
-  let rounds = parseInt(process.env.BCRYPT_SALT_ROUNDS || "10", 10);
+  const rounds = parseInt(process.env.BCRYPT_SALT_ROUNDS || "10", 10);
   if (!rounds || isNaN(rounds)) return 10;
   if (rounds < 8) return 10;
   if (rounds > 14) return 12;
@@ -10,9 +10,9 @@ function getSaltRounds() {
 }
 
 module.exports = async function bootstrapSuperAdmin() {
-  let email = process.env.SUPER_ADMIN_EMAIL;
-  let password = process.env.SUPER_ADMIN_PASSWORD;
-  let name = process.env.SUPER_ADMIN_NAME || "Initial Super Admin";
+  const email = process.env.SUPER_ADMIN_EMAIL;
+  const password = process.env.SUPER_ADMIN_PASSWORD;
+  const name = process.env.SUPER_ADMIN_NAME || "Initial Super Admin";
 
   if (!email || !password) {
     console.log("SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD missing. Skipping bootstrap.");
@@ -20,14 +20,14 @@ module.exports = async function bootstrapSuperAdmin() {
   }
 
   // if any Super Admin already exists, do nothing
-  let existingSuper = await User.findOne({ role: "Super Admin", status: "APPROVED" }).select("_id");
+  const existingSuper = await User.findOne({ role: "Super Admin", status: "APPROVED" }).select("_id");
   if (existingSuper) {
     console.log("Super admin already exists. Skipping bootstrap.");
     return;
   }
 
   // if user exists with same email, promote it
-  let existingEmail = await User.findOne({ email: String(email).toLowerCase() });
+  const existingEmail = await User.findOne({ email: String(email).toLowerCase() });
   if (existingEmail) {
     existingEmail.role = "Super Admin";
     existingEmail.status = "APPROVED";
@@ -37,7 +37,7 @@ module.exports = async function bootstrapSuperAdmin() {
     return;
   }
 
-  let passwordHash = await bcrypt.hash(String(password), getSaltRounds());
+  const passwordHash = await bcrypt.hash(String(password), getSaltRounds());
 
   await User.create({
     name: name,

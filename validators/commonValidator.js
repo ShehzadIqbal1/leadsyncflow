@@ -4,12 +4,12 @@ function safeString(v) {
 }
 
 function uniqueStrings(list) {
-  let arr = Array.isArray(list) ? list : [];
-  let set = new Set();
-  let out = [];
+  const arr = Array.isArray(list) ? list : [];
+  const set = new Set();
+  const out = [];
 
   for (let i = 0; i < arr.length; i++) {
-    let v = safeString(arr[i]);
+    const v = safeString(arr[i]);
     if (!v) continue;
     if (set.has(v)) continue;
     set.add(v);
@@ -20,7 +20,7 @@ function uniqueStrings(list) {
 
 function isValidUrl(url) {
   try {
-    let u = new URL(safeString(url));
+    const u = new URL(safeString(url));
     return u.protocol === "http:" || u.protocol === "https:";
   } catch (e) {
     return false;

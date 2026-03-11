@@ -1,6 +1,6 @@
-let mongoose = require("mongoose");
+const mongoose = require("mongoose");
 
-let CounterSchema = new mongoose.Schema(
+const CounterSchema = new mongoose.Schema(
   {
     key: { type: String, required: true, unique: true },
     seq: { type: Number, default: 0 },

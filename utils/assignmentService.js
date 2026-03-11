@@ -1,9 +1,9 @@
-let Counter = require("../models/Counter");
-let User = require("../models/User");
+const Counter = require("../models/Counter");
+const User = require("../models/User");
 
 async function getNextLeadQualifier() {
   // 1. Fetch Lead Qualifiers and SORT them by _id to ensure a consistent sequence
-  let lqs = await User.find({ 
+  const lqs = await User.find({ 
     role: "Lead Qualifiers", 
     status: "APPROVED" 
   })
@@ -14,14 +14,14 @@ async function getNextLeadQualifier() {
 
   // 2. Atomic increment of the counter
   // This ensures that even if 10 verifiers click at once, each gets a unique sequence number
-  let counter = await Counter.findOneAndUpdate(
+  const counter = await Counter.findOneAndUpdate(
     { key: "LQ_ASSIGN" },
     { $inc: { seq: 1 } },
     { new: true, upsert: true }
   );
 
   // 3. Use Modulo to pick the next user in the sorted list
-  let index = counter.seq % lqs.length;
+  const index = counter.seq % lqs.length;
   
   return lqs[index]; // Returns the User object containing the _id
 }

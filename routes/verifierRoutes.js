@@ -1,9 +1,9 @@
-let express = require("express");
-let router = express.Router();
+const express = require("express");
+const router = express.Router();
 
-let requireAuth = require("../middlewares/requireAuth");
-let requireRole = require("../middlewares/requireRole");
-let verifierController = require("../controllers/verifierController");
+const requireAuth = require("../middlewares/requireAuth");
+const requireRole = require("../middlewares/requireRole");
+const verifierController = require("../controllers/verifierController");
 
 
 router.get(

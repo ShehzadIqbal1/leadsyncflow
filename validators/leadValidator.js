@@ -1,14 +1,14 @@
-let normalize = require("../utils/normalize");
-let common = require("./commonValidator");
+const normalize = require("../utils/normalize");
+const common = require("./commonValidator");
 
 function cleanSources(sources) {
-  let arr = Array.isArray(sources) ? sources : [];
-  let out = [];
+  const arr = Array.isArray(sources) ? sources : [];
+  const out = [];
 
   for (let i = 0; i < arr.length; i++) {
-    let s = arr[i] || {};
-    let name = common.safeString(s.name);
-    let link = common.safeString(s.link);
+    const s = arr[i] || {};
+    const name = common.safeString(s.name);
+    const link = common.safeString(s.link);
 
     if (!name || !link) continue;
 
@@ -33,11 +33,11 @@ function cleanSources(sources) {
  * - source link valid URL
  */
 function validateDataMinorLead(body) {
-  let name = common.safeString(body && body.name);
-  let location = common.safeString(body && body.location); // optional
-  let emails = common.uniqueStrings(body && body.emails);
-  let phones = common.uniqueStrings(body && body.phones);
-  let sources = cleanSources(body && body.sources);
+  const name = common.safeString(body && body.name);
+  const location = common.safeString(body && body.location); // optional
+  const emails = common.uniqueStrings(body && body.emails);
+  const phones = common.uniqueStrings(body && body.phones);
+  const sources = cleanSources(body && body.sources);
 
   if (!name) {
     return { ok: false, message: "Name is required", fields: { name: true } };
@@ -89,11 +89,11 @@ function validateDataMinorLead(body) {
   }
 
   // normalize & validate emails
-  let emailsNormalized = [];
-  let emailLocalParts = [];
+  const emailsNormalized = [];
+  const emailLocalParts = [];
 
   for (let i = 0; i < emails.length; i++) {
-    let eNorm = normalize.normalizeEmail(emails[i]);
+    const eNorm = normalize.normalizeEmail(emails[i]);
 
     if (!normalize.isValidEmail(eNorm)) {
       return {
@@ -105,15 +105,15 @@ function validateDataMinorLead(body) {
 
     emailsNormalized.push(eNorm);
 
-    let local = normalize.emailLocalPart(eNorm);
+    const local = normalize.emailLocalPart(eNorm);
     if (local) emailLocalParts.push(local);
   }
 
   // normalize & validate phones
-  let phonesNormalized = [];
+  const phonesNormalized = [];
 
   for (let i = 0; i < phones.length; i++) {
-    let pNorm = normalize.normalizePhone(phones[i]);
+    const pNorm = normalize.normalizePhone(phones[i]);
 
     if (!pNorm) {
       return {

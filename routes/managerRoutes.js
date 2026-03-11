@@ -1,36 +1,27 @@
-let express = require("express");
-let router = express.Router();
+const express = require("express");
+const router = express.Router();
 
-let requireAuth = require("../middlewares/requireAuth");
-let requireRole = require("../middlewares/requireRole");
-let managerController = require("../controllers/managerController");
+const requireAuth = require("../middlewares/requireAuth");
+const requireRole = require("../middlewares/requireRole");
+const managerController = require("../controllers/managerController");
 
-router.get(
-  "/leads",
-  requireAuth,
-  requireRole("Manager",  "Admin"),
-  managerController.getMyAssignedLeads
-);
+// Apply middleware to all routes in this router to keep it DRY
+router.use(requireAuth);
+router.use(requireRole("Manager", "Admin"));
 
-router.post(
-  "/leads/:id/decision",
-  requireAuth,
-  requireRole("Manager",  "Admin"),
-  managerController.decisionOnLead
-);
+// GET all leads assigned to the manager
+router.get("/leads", managerController.getMyAssignedLeads);
 
-router.post(
-  "/leads/:id/comment",
-  requireAuth,
-  requireRole("Manager", "Admin"),
-  managerController.addManagerComment
-);
+// POST request for lead rejection
+router.post("/leads/:id/reqRejection", managerController.requestRejection);
 
-router.post(
-  "/leads/:id/payment-status",
-  requireAuth,
-  requireRole("Manager",  "Admin"),
-  managerController.updatePaymentStatus
-);
+// POST record payment/upsell
+router.post("/leads/:id/payment-status", managerController.updatePaymentStatus);
+
+// GET approved rejections (final rejected leads)
+router.get("/rejections-approved", managerController.getApprovedRejections);
+
+//GET stats api 
+router.get("/leads/stats/:managerId", managerController.getManagerStats);
 
 module.exports = router;

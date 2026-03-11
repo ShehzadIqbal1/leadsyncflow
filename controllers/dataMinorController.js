@@ -1,18 +1,18 @@
 // controllers/dataMinorController.js
-let Lead = require("../models/Lead");
-let statusCodes = require("../utils/statusCodes");
-let httpError = require("../utils/httpError");
-let asyncHandler = require("../middlewares/asyncHandler");
-let normalize = require("../utils/normalize");
-let leadValidator = require("../validators/leadValidator");
+const Lead = require("../models/Lead");
+const statusCodes = require("../utils/statusCodes");
+const httpError = require("../utils/httpError");
+const asyncHandler = require("../middlewares/asyncHandler");
+const normalize = require("../utils/normalize");
+const leadValidator = require("../validators/leadValidator");
 
 // ---------------------------------------------
 // PKT helpers
 // ---------------------------------------------
 function getPktNow() {
-  let now = new Date();
-  let pktDate = now.toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" }); // YYYY-MM-DD
-  let pktTime = now.toLocaleTimeString("en-GB", {
+  const now = new Date();
+  const pktDate = now.toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" }); // YYYY-MM-DD
+  const pktTime = now.toLocaleTimeString("en-GB", {
     timeZone: "Asia/Karachi",
     hour12: false,
   }); // HH:mm:ss
@@ -25,18 +25,18 @@ function pktDayRangeUtc(pktDateStr) {
   // Create PKT start/end strings and let JS parse as UTC by adding Z AFTER converting to PKT is messy.
   // Simpler: use Intl to get pkt components, then compute UTC by offset is non-trivial.
   // Minimal practical approach: use server Date but with PKT date string boundaries as "local" in PKT:
-  let start = new Date(pktDateStr + "T00:00:00.000+05:00");
-  let end = new Date(pktDateStr + "T23:59:59.999+05:00");
+  const start = new Date(pktDateStr + "T00:00:00.000+05:00");
+  const end = new Date(pktDateStr + "T23:59:59.999+05:00");
   return { start: start, end: end };
 }
 
 function pktMonthRangeUtc(pktDateStr) {
   // pktDateStr "YYYY-MM-DD"
-  let y = parseInt(pktDateStr.slice(0, 4), 10);
-  let m = parseInt(pktDateStr.slice(5, 7), 10); // 1-12
+  const y = parseInt(pktDateStr.slice(0, 4), 10);
+  const m = parseInt(pktDateStr.slice(5, 7), 10); // 1-12
 
-  let monthStartStr = y + "-" + String(m).padStart(2, "0") + "-01";
-  let start = new Date(monthStartStr + "T00:00:00.000+05:00");
+  const monthStartStr = y + "-" + String(m).padStart(2, "0") + "-01";
+  const start = new Date(monthStartStr + "T00:00:00.000+05:00");
 
   // next month start
   let ny = y;
@@ -45,9 +45,8 @@ function pktMonthRangeUtc(pktDateStr) {
     nm = 1;
     ny = y + 1;
   }
-  let nextMonthStartStr =
-    ny + "-" + String(nm).padStart(2, "0") + "-01";
-  let end = new Date(nextMonthStartStr + "T00:00:00.000+05:00"); // exclusive
+  const nextMonthStartStr = ny + "-" + String(nm).padStart(2, "0") + "-01";
+  const end = new Date(nextMonthStartStr + "T00:00:00.000+05:00"); // exclusive
   return { start: start, end: end };
 }
 
@@ -55,14 +54,14 @@ function pktMonthRangeUtc(pktDateStr) {
 // Duplicate finder (FULL EMAIL + PHONE ONLY)
 // ---------------------------------------------
 async function findDuplicates(emailNorms, phoneNorms) {
-  let tasks = [];
+  const tasks = [];
 
   tasks.push(
     emailNorms && emailNorms.length
       ? Lead.distinct("emails.normalized", {
           "emails.normalized": { $in: emailNorms },
         })
-      : Promise.resolve([])
+      : Promise.resolve([]),
   );
 
   tasks.push(
@@ -70,10 +69,10 @@ async function findDuplicates(emailNorms, phoneNorms) {
       ? Lead.distinct("phonesNormalized", {
           phonesNormalized: { $in: phoneNorms },
         })
-      : Promise.resolve([])
+      : Promise.resolve([]),
   );
 
-  let results = await Promise.all(tasks);
+  const results = await Promise.all(tasks);
 
   return {
     duplicateEmails: results[0] || [],
@@ -85,14 +84,14 @@ async function findDuplicates(emailNorms, phoneNorms) {
 // Build Email subdocuments safely (NO localPart)
 // ---------------------------------------------
 function buildEmailObjects(rawEmails) {
-  let arr = Array.isArray(rawEmails) ? rawEmails : [];
-  let out = [];
+  const arr = Array.isArray(rawEmails) ? rawEmails : [];
+  const out = [];
 
   for (let i = 0; i < arr.length; i++) {
-    let raw = String(arr[i] || "").trim();
+    const raw = String(arr[i] || "").trim();
     if (!raw) continue;
 
-    let eNorm = normalize.normalizeEmail(raw);
+    const eNorm = normalize.normalizeEmail(raw);
     if (!normalize.isValidEmail(eNorm)) continue;
 
     out.push({
@@ -108,27 +107,27 @@ function buildEmailObjects(rawEmails) {
 // ---------------------------------------------
 // GET /api/dm/duplicates/check?email=... OR ?phone=...
 // ---------------------------------------------
-let liveDuplicateCheck = asyncHandler(async function (req, res, next) {
-  let email = String(req.query.email || "").trim();
-  let phone = String(req.query.phone || "").trim();
+const liveDuplicateCheck = asyncHandler(async function (req, res, next) {
+  const email = String(req.query.email || "").trim();
+  const phone = String(req.query.phone || "").trim();
 
   if (!email && !phone) {
     return next(httpError(statusCodes.BAD_REQUEST, "Provide email or phone"));
   }
 
-  let out = {
+  const out = {
     success: true,
     email: { exists: false, match: "" },
     phone: { exists: false, match: "" },
   };
 
   if (email) {
-    let eNorm = normalize.normalizeEmail(email);
+    const eNorm = normalize.normalizeEmail(email);
     if (!normalize.isValidEmail(eNorm)) {
       return next(httpError(statusCodes.BAD_REQUEST, "Invalid email"));
     }
 
-    let dupFull = await Lead.distinct("emails.normalized", {
+    const dupFull = await Lead.distinct("emails.normalized", {
       "emails.normalized": { $in: [eNorm] },
     });
 
@@ -139,12 +138,12 @@ let liveDuplicateCheck = asyncHandler(async function (req, res, next) {
   }
 
   if (phone) {
-    let pNorm = normalize.normalizePhone(phone);
+    const pNorm = normalize.normalizePhone(phone);
     if (!pNorm) {
       return next(httpError(statusCodes.BAD_REQUEST, "Invalid phone"));
     }
 
-    let dupPhone = await Lead.distinct("phonesNormalized", {
+    const dupPhone = await Lead.distinct("phonesNormalized", {
       phonesNormalized: { $in: [pNorm] },
     });
 
@@ -160,36 +159,92 @@ let liveDuplicateCheck = asyncHandler(async function (req, res, next) {
 // ---------------------------------------------
 // GET /api/dm/stats  (PKT-correct)
 // ---------------------------------------------
-let getMyStats = asyncHandler(async function (req, res, next) {
-  let userId = req.user.id;
+const getMyStats = asyncHandler(async function (req, res, next) {
+  const userId = req.user.id;
 
-  let pkt = getPktNow();
+  const today = String(req.query.today || "")
+    .trim()
+    .toLowerCase();
+  const from = String(req.query.from || "").trim();
+  const to = String(req.query.to || "").trim();
 
-  let day = pktDayRangeUtc(pkt.pktDate);
-  let month = pktMonthRangeUtc(pkt.pktDate);
+  const pkt = getPktNow();
 
-  let todayCount = await Lead.countDocuments({
+  let range = null;
+
+  function isYmd(s) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(s);
+  }
+
+  // ---------------------------------------
+  // TODAY FILTER
+  // ---------------------------------------
+  if (today === "true" || today === "1") {
+    const day = pktDayRangeUtc(pkt.pktDate);
+
+    range = {
+      $gte: day.start,
+      $lte: day.end,
+    };
+  }
+
+  // ---------------------------------------
+  // DATE RANGE FILTER (calendar selection)
+  // ---------------------------------------
+  else if (from || to) {
+    if (from && !isYmd(from)) {
+      return next(httpError(statusCodes.BAD_REQUEST, "Invalid from date"));
+    }
+
+    if (to && !isYmd(to)) {
+      return next(httpError(statusCodes.BAD_REQUEST, "Invalid to date"));
+    }
+
+    range = {};
+
+    if (from) {
+      const start = pktDayRangeUtc(from);
+      range.$gte = start.start;
+    }
+
+    if (to) {
+      const end = pktDayRangeUtc(to);
+      range.$lte = end.end;
+    }
+  }
+
+  // ---------------------------------------
+  // BUILD QUERY
+  // ---------------------------------------
+  const query = {
     createdBy: userId,
-    createdAt: { $gte: day.start, $lte: day.end },
-  });
+  };
 
-  let monthCount = await Lead.countDocuments({
-    createdBy: userId,
-    createdAt: { $gte: month.start, $lt: month.end },
-  });
+  if (range) {
+    query.createdAt = range;
+  }
+
+  // ---------------------------------------
+  // FETCH COUNT
+  // ---------------------------------------
+  const totalCount = await Lead.countDocuments(query);
 
   return res.status(statusCodes.OK).json({
     success: true,
-    todayCount: todayCount,
-    monthCount: monthCount,
+    filters: {
+      today: today === "true" || today === "1",
+      from: from || null,
+      to: to || null,
+    },
+    totalCount: totalCount,
   });
 });
 
 // ---------------------------------------------
 // POST /api/dm/leads
 // ---------------------------------------------
-let submitLead = asyncHandler(async function (req, res, next) {
-  let validation = leadValidator.validateDataMinorLead(req.body);
+const submitLead = asyncHandler(async function (req, res, next) {
+  const validation = leadValidator.validateDataMinorLead(req.body);
   if (!validation.ok) {
     return res.status(statusCodes.BAD_REQUEST).json({
       success: false,
@@ -198,10 +253,10 @@ let submitLead = asyncHandler(async function (req, res, next) {
     });
   }
 
-  let data = validation.data;
+  const data = validation.data;
 
   // Build email subdocuments
-  let emailObjects = buildEmailObjects(data.emails);
+  const emailObjects = buildEmailObjects(data.emails);
 
   // SAFETY: at least one email OR phone must survive normalization
   if (
@@ -211,21 +266,21 @@ let submitLead = asyncHandler(async function (req, res, next) {
     return next(
       httpError(
         statusCodes.BAD_REQUEST,
-        "No valid email or phone number provided"
-      )
+        "No valid email or phone number provided",
+      ),
     );
   }
 
   // Extract normalized emails for duplicate check
-  let emailsNorm = [];
+  const emailsNorm = [];
   for (let i = 0; i < emailObjects.length; i++) {
     emailsNorm.push(emailObjects[i].normalized);
   }
 
   // Duplicate check (FULL EMAIL + PHONE ONLY)
-  let dups = await findDuplicates(emailsNorm, data.phonesNormalized);
+  const dups = await findDuplicates(emailsNorm, data.phonesNormalized);
 
-  let hasDup =
+  const hasDup =
     (dups.duplicateEmails && dups.duplicateEmails.length) ||
     (dups.duplicatePhones && dups.duplicatePhones.length);
 
@@ -238,29 +293,28 @@ let submitLead = asyncHandler(async function (req, res, next) {
   }
 
   // 🇵🇰 Pakistan Standard Time
-  let pkt = getPktNow();
+  const pkt = getPktNow();
 
   // ONLY ONE SOURCE LINK (store first only)
-  let sources = Array.isArray(data.sources) ? data.sources : [];
-  let firstSource = sources.length ? [sources[0]] : [];
+  const sources = Array.isArray(data.sources) ? data.sources : [];
+  const firstSource = sources.length ? [sources[0]] : [];
 
- let lead = await Lead.create({
-  name: data.name,
-  location: data.location || "",
-  emails: emailObjects,
-  phones: data.phones,
-  phonesNormalized: data.phonesNormalized,
-  sources: firstSource,
+  const lead = await Lead.create({
+    name: data.name,
+    location: data.location || "",
+    emails: emailObjects,
+    phones: data.phones,
+    phonesNormalized: data.phonesNormalized,
+    sources: firstSource,
 
-  //stage logic:
-  stage: emailObjects.length > 0 ? "DM" : "Verifier",
+    //stage logic:
+    stage: emailObjects.length > 0 ? "DM" : "Verifier",
 
-  status: "UNPAID",
-  submittedDate: pkt.pktDate,
-  submittedTime: pkt.pktTime,
-  createdBy: req.user.id,
-});
-
+    status: "UNPAID",
+    submittedDate: pkt.pktDate,
+    submittedTime: pkt.pktTime,
+    createdBy: req.user.id,
+  });
 
   return res.status(statusCodes.CREATED).json({
     success: true,
@@ -272,7 +326,7 @@ let submitLead = asyncHandler(async function (req, res, next) {
 });
 
 module.exports = {
-  liveDuplicateCheck: liveDuplicateCheck,
-  getMyStats: getMyStats,
-  submitLead: submitLead,
+  liveDuplicateCheck,
+  getMyStats,
+  submitLead,
 };

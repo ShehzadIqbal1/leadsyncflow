@@ -1,12 +1,12 @@
-let express = require("express");
-let router = express.Router();
+const express = require("express");
+const router = express.Router();
 
 // Middlewares
-let requireAuth = require("../middlewares/requireAuth");
-let requireRole = require("../middlewares/requireRole");
+const requireAuth = require("../middlewares/requireAuth");
+const requireRole = require("../middlewares/requireRole");
 
 // Controller
-let superAdminController = require("../controllers/superAdminController");
+const superAdminController = require("../controllers/superAdminController");
 
 // ---------------------------------------------------------
 // DASHBOARD & ANALYTICS
@@ -98,6 +98,27 @@ router.patch(
   requireAuth,
   requireRole(["Super Admin", "Admin"]),
   superAdminController.unassignLqs
+);
+
+// ---------------------------------------------------------
+// REJECTION MANAGEMENT
+// Allowed for: Super Admin, Admin
+// ---------------------------------------------------------
+
+// Get all rejection requests from managers
+router.get(
+  "/rejection-requests",
+  requireAuth,
+  requireRole(["Super Admin", "Admin"]),
+  superAdminController.getRejectionRequests
+);
+
+// Make decision (APPROVE / REJECT)
+router.patch(
+  "/rejection-requests/:id/decision",
+  requireAuth,
+  requireRole(["Super Admin", "Admin"]),
+  superAdminController.decideRejectionRequest
 );
 
 module.exports = router;

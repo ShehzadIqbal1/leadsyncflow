@@ -1,9 +1,9 @@
-let express = require("express");
-let router = express.Router();
+const express = require("express");
+const router = express.Router();
 
-let requireAuth = require("../middlewares/requireAuth");
-let requireRole = require("../middlewares/requireRole");
-let lqController = require("../controllers/leadQualifierController");
+const requireAuth = require("../middlewares/requireAuth");
+const requireRole = require("../middlewares/requireRole");
+const lqController = require("../controllers/leadQualifierController");
 
 // LQ leads list
 router.get(

@@ -1,11 +1,11 @@
-let User = require("../models/User");
-let constants = require("../utils/constants");
-let statusCodes = require("../utils/statusCodes");
-let httpError = require("../utils/httpError");
-let asyncHandler = require("./asyncHandler");
+const User = require("../models/User");
+const constants = require("../utils/constants");
+const statusCodes = require("../utils/statusCodes");
+const httpError = require("../utils/httpError");
+const asyncHandler = require("./asyncHandler");
 
 module.exports = asyncHandler(async function (req, res, next) {
-  let user = await User.findById(req.user.id).select(" role status");
+  const user = await User.findById(req.user.id).select(" role status");
   if (!user) return next(httpError(statusCodes.UNAUTHORIZED, "Not authenticated"));
   
   if (user.status !== constants.userStatus.APPROVED) {
