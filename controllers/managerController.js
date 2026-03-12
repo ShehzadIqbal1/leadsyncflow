@@ -31,9 +31,13 @@ const getMyAssignedLeads = asyncHandler(async function (req, res, next) {
     assignedTo: managerId,
     stage: "MANAGER",
   };
-
+const projection = {
+    emails: 0,
+    phones: 0,
+    phonesNormalized: 0,
+  };
   const [leads, totalLeads] = await Promise.all([
-    Lead.find(filter)
+    Lead.find(filter, projection)
       .sort({
         superAdminReturnPriorityUntil: -1, // Priority for 24hr returned leads
         assignedAt: -1,
@@ -43,7 +47,9 @@ const getMyAssignedLeads = asyncHandler(async function (req, res, next) {
       .limit(limit)
       .populate("createdBy", "name email role")
       .populate("assignedTo", "name email role")
-      .populate("comments.createdBy", "name email role"),
+      .populate("comments.createdBy", "name email role")
+      .populate("responseSource.emails.selectedBy", "name email role")
+      .populate("responseSource.phones.selectedBy", "name email role"),
     Lead.countDocuments(filter),
   ]);
 
