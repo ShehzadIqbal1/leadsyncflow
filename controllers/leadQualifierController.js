@@ -220,7 +220,7 @@ const addComment = asyncHandler(async function (req, res, next) {
   });
 });
 
-//submit qualified lead to manager (multi-contact)
+// submit qualified lead to manager (multi-contact, keep original lead contacts)
 const submitToMyManager = asyncHandler(async function (req, res, next) {
   const leadId = req.params.leadId;
 
@@ -236,18 +236,26 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
     ? req.body.selectedPhones
     : [];
 
-  // normalize/clean inputs
-  selectedEmails = selectedEmails
-    .map((x) =>
-      String(x || "")
-        .trim()
-        .toLowerCase(),
-    )
-    .filter(Boolean);
+  // normalize/clean inputs + dedupe
+  selectedEmails = [
+    ...new Set(
+      selectedEmails
+        .map((x) =>
+          String(x || "")
+            .trim()
+            .toLowerCase(),
+        )
+        .filter(Boolean),
+    ),
+  ];
 
-  selectedPhones = selectedPhones
-    .map((x) => String(x || "").trim())
-    .filter(Boolean);
+  selectedPhones = [
+    ...new Set(
+      selectedPhones
+        .map((x) => String(x || "").trim())
+        .filter(Boolean),
+    ),
+  ];
 
   // Mandatory validation: at least one email OR one phone
   if (!selectedEmails.length && !selectedPhones.length) {
@@ -263,6 +271,7 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
   const lqUser = await User.findById(req.user.id).select(
     "reportsTo role status",
   );
+
   if (!lqUser) {
     return next(httpError(statusCodes.NOT_FOUND, "User not found"));
   }
@@ -292,13 +301,13 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
     );
   }
 
-  // 3) Fetch lead (need emails/phones to filter)
+  // 3) Fetch lead
   const lead = await Lead.findOne({
     _id: leadId,
     stage: "LQ",
     assignedTo: req.user.id,
   }).select(
-    "stage lqStatus emails phones phonesNormalized responseSource assignedTo assignedToRole assignedAt",
+    "stage lqStatus emails phones phonesNormalized responseSource assignedTo assignedToRole assignedAt lqUpdatedAt lqUpdatedBy",
   );
 
   if (!lead) {
@@ -318,56 +327,71 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
   }
 
   // ---------------------------------------------
-  // 5) Filter Emails (keep only selected normalized)
+  // 5) Validate / collect selected Emails
   // ---------------------------------------------
   const existingEmails = Array.isArray(lead.emails) ? lead.emails : [];
-  const selectedEmailSet = new Set(selectedEmails);
+  const existingEmailMap = new Map();
 
-  const filteredEmails = existingEmails.filter(function (e) {
-    const n = String((e && e.normalized) || "")
+  for (const e of existingEmails) {
+    const normalized = String((e && e.normalized) || "")
       .trim()
       .toLowerCase();
-    return n && selectedEmailSet.has(n);
-  });
+
+    if (normalized) {
+      existingEmailMap.set(normalized, e);
+    }
+  }
+
+  const selectedEmailPicks = [];
+
+  for (const email of selectedEmails) {
+    const matchedEmail = existingEmailMap.get(email);
+
+    if (!matchedEmail) {
+      return next(
+        httpError(
+          statusCodes.BAD_REQUEST,
+          "Selected email not found in this lead",
+        ),
+      );
+    }
+
+    selectedEmailPicks.push(matchedEmail);
+  }
 
   // ---------------------------------------------
-  // 6) Filter Phones (keep only those that exist on lead)
-  // - selectedPhones is raw input; validate existence via raw or normalized
-  // - overwrite BOTH phones and phonesNormalized with only selected ones
+  // 6) Validate / collect selected Phones
   // ---------------------------------------------
   const existingPhones = Array.isArray(lead.phones) ? lead.phones : [];
   const existingPhonesNorm = Array.isArray(lead.phonesNormalized)
     ? lead.phonesNormalized
     : [];
 
-  // build fast lookup sets
-  const existingRawSet = new Set(
-    existingPhones.map((p) => String(p || "").trim()),
-  );
-  const existingNormSet = new Set(
-    existingPhonesNorm.map((p) => String(p || "").trim()),
-  );
+  const phonePairs = [];
 
-  const filteredPhones = [];
-  const filteredPhonesNormalized = [];
+  for (let i = 0; i < existingPhones.length; i++) {
+    phonePairs.push({
+      value: String(existingPhones[i] || "").trim(),
+      normalized: String(existingPhonesNorm[i] || "").trim(),
+    });
+  }
 
-  for (let i = 0; i < selectedPhones.length; i++) {
-    const raw = String(selectedPhones[i] || "").trim();
-    if (!raw) continue;
+  const selectedPhonePicks = [];
 
+  for (const raw of selectedPhones) {
     const pNorm = normalize.normalizePhone(raw);
+
     if (!pNorm) {
       return next(
         httpError(statusCodes.BAD_REQUEST, "Invalid phone in selectedPhones"),
       );
     }
 
-    // must belong to THIS lead
-    const belongs =
-      existingRawSet.has(raw) ||
-      existingNormSet.has(String(pNorm || "").trim());
+    const matchedPhone = phonePairs.find(
+      (p) => p.value === raw || p.normalized === String(pNorm).trim(),
+    );
 
-    if (!belongs) {
+    if (!matchedPhone) {
       return next(
         httpError(
           statusCodes.BAD_REQUEST,
@@ -376,15 +400,13 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
       );
     }
 
-    filteredPhones.push(raw);
-    filteredPhonesNormalized.push(pNorm);
+    selectedPhonePicks.push(matchedPhone);
   }
 
   // ---------------------------------------------
-  // 7) Post-filter validation:
-  // Ensure at least 1 email OR 1 phone remains AFTER filtering
+  // 7) Final validation
   // ---------------------------------------------
-  if (!filteredEmails.length && !filteredPhones.length) {
+  if (!selectedEmailPicks.length && !selectedPhonePicks.length) {
     return next(
       httpError(
         statusCodes.BAD_REQUEST,
@@ -394,48 +416,33 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
   }
 
   // ---------------------------------------------
-  // 8) Update responseSource primary driver:
-  // - email/phone primary = first item of selected arrays (if exists)
-  // - responseSource uses first valid filtered item
+  // 8) Build responseSource with ALL selected picks
   // ---------------------------------------------
   const pkt = getPktDateTime();
 
-  const responseSource = {};
-
-  // Primary email (first filtered email)
-  if (filteredEmails.length) {
-    const primaryEmail = filteredEmails[0];
-    responseSource.email = {
-      value: String(primaryEmail.value || ""),
-      normalized: String(primaryEmail.normalized || ""),
+  const responseSource = {
+    emails: selectedEmailPicks.map((emailObj) => ({
+      value: String(emailObj.value || ""),
+      normalized: String(emailObj.normalized || "").trim().toLowerCase(),
       selectedBy: req.user.id,
       selectedAt: pkt.now,
       selectedDate: pkt.pktDate,
       selectedTime: pkt.pktTime,
-    };
-  }
-
-  // Primary phone (first filtered phone)
-  if (filteredPhones.length) {
-    const primaryPhone = filteredPhones[0];
-    const primaryPhoneNorm = filteredPhonesNormalized[0];
-
-    responseSource.phone = {
-      value: String(primaryPhone || ""),
-      normalized: String(primaryPhoneNorm || ""),
+    })),
+    phones: selectedPhonePicks.map((phoneObj) => ({
+      value: String(phoneObj.value || "").trim(),
+      normalized: String(phoneObj.normalized || "").trim(),
       selectedBy: req.user.id,
       selectedAt: pkt.now,
       selectedDate: pkt.pktDate,
       selectedTime: pkt.pktTime,
-    };
-  }
+    })),
+  };
 
   // ---------------------------------------------
-  // 9) Overwrite lead contacts with qualified-only data
+  // 9) DO NOT overwrite original lead contacts
+  // Only store selected picks in responseSource
   // ---------------------------------------------
-  lead.emails = filteredEmails;
-  lead.phones = filteredPhones;
-  lead.phonesNormalized = filteredPhonesNormalized;
   lead.responseSource = responseSource;
 
   // ---------------------------------------------
@@ -454,12 +461,12 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
 
   return res.status(statusCodes.OK).json({
     success: true,
-    message: "Lead submitted to your assigned manager with qualified contacts",
+    message: "Lead submitted to your assigned manager with selected response contacts",
     leadId: String(lead._id),
     assignedTo: String(manager._id),
     assignedToRole: "Manager",
-    qualifiedEmailsCount: lead.emails.length,
-    qualifiedPhonesCount: lead.phones.length,
+    selectedEmailsCount: responseSource.emails.length,
+    selectedPhonesCount: responseSource.phones.length,
     responseSource: lead.responseSource,
   });
 });

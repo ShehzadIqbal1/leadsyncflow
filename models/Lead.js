@@ -54,12 +54,11 @@ const ResponsePickSchema = new mongoose.Schema(
 
 const ResponseSourceSchema = new mongoose.Schema(
   {
-    email: { type: ResponsePickSchema, default: undefined },
-    phone: { type: ResponsePickSchema, default: undefined },
+    emails: { type: [ResponsePickSchema], default: [] },
+    phones: { type: [ResponsePickSchema], default: [] },
   },
   { _id: false },
 );
-
 const LeadSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
