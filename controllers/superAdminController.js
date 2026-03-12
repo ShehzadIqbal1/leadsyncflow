@@ -283,7 +283,7 @@ const getPerformance = asyncHandler(async function (req, res, next) {
           },
           dead: { $sum: { $cond: [{ $eq: ["$lqStatus", "DEAD"] }, 1, 0] } },
           inConversation: {
-            $sum: { $cond: [{ $eq: ["$lqStatus", "IN_CONVERSATION"] }, 1, 0] },
+            $sum: { $cond: [{ $eq: ["$lqStatus", "REACHED"] }, 1, 0] },
           },
         },
       },
@@ -562,11 +562,8 @@ const unassignLqs = asyncHandler(async function (req, res, next) {
   });
 });
 
-
-
 // GET /api/superadmin/rejection-requests
 const getRejectionRequests = asyncHandler(async function (req, res) {
-
   const leads = await Lead.find({
     rejectionRequested: true,
   })
@@ -584,7 +581,6 @@ const getRejectionRequests = asyncHandler(async function (req, res) {
 
 // PATCH /api/superadmin/rejection-requests/:id/decision
 const decideRejectionRequest = asyncHandler(async function (req, res, next) {
-
   const { id: leadId } = req.params;
   const { decision, comment } = req.body;
 
@@ -596,10 +592,7 @@ const decideRejectionRequest = asyncHandler(async function (req, res, next) {
 
   if (!decision || !allowedDecisions.includes(String(decision).toUpperCase())) {
     return next(
-      httpError(
-        statusCodes.BAD_REQUEST,
-        "Decision must be APPROVE or REJECT"
-      )
+      httpError(statusCodes.BAD_REQUEST, "Decision must be APPROVE or REJECT"),
     );
   }
 
@@ -610,7 +603,7 @@ const decideRejectionRequest = asyncHandler(async function (req, res, next) {
 
   if (!lead) {
     return next(
-      httpError(statusCodes.NOT_FOUND, "Rejection request not found")
+      httpError(statusCodes.NOT_FOUND, "Rejection request not found"),
     );
   }
 
@@ -621,7 +614,6 @@ const decideRejectionRequest = asyncHandler(async function (req, res, next) {
   // CASE 1: SUPER ADMIN APPROVES REJECTION
   // ----------------------------------------
   if (upperDecision === "APPROVE") {
-
     lead.stage = "REJECTED";
 
     // Keep assignedTo for visibility history
@@ -634,30 +626,37 @@ const decideRejectionRequest = asyncHandler(async function (req, res, next) {
     lead.rejectionApprovedBy = req.user.id;
 
     if (comment) {
-      lead.rejectionDecisionComment = String(comment).trim();
+      lead.comments.push({
+        text: comment,
+        createdBy: req.user.id,
+        createdByRole: "Super Admin",
+        createdAt: new Date(),      
+      });
     }
-
   }
 
   // ----------------------------------------
   // CASE 2: SUPER ADMIN REJECTS REQUEST
   // ----------------------------------------
   if (upperDecision === "REJECT") {
-
     // Return to manager with 24h priority
     lead.rejectionRequested = false;
 
     lead.superAdminReturnPriorityUntil = new Date(
-      now.getTime() + 24 * 60 * 60 * 1000
+      now.getTime() + 24 * 60 * 60 * 1000,
     );
 
     lead.rejectionRejectedAt = now;
     lead.rejectionRejectedBy = req.user.id;
 
     if (comment) {
-      lead.rejectionDecisionComment = String(comment).trim();
+      lead.comments.push({
+        text: comment,
+        createdBy: req.user.id,
+        createdByRole: "Super Admin",
+        createdAt: new Date(),
+      });
     }
-
     // Stage remains MANAGER
   }
 
@@ -686,5 +685,5 @@ module.exports = {
   assignLqsToManager,
   unassignLqs,
   getRejectionRequests,
-  decideRejectionRequest
+  decideRejectionRequest,
 };
