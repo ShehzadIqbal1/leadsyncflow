@@ -52,6 +52,18 @@ const userSchema = new mongoose.Schema(
       ref: "User",
       default: null, // will point to a Manager user
     },
+
+    // Forgot Password
+    passwordResetToken: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    passwordResetExpiresAt: {
+      type: Date,
+      default: null,
+      select: false,
+    },
   },
   { timestamps: true },
 );
@@ -68,5 +80,6 @@ userSchema.index(
 );
 
 userSchema.index({ role: 1, status: 1, reportsTo: 1 });
+userSchema.index({ passwordResetToken: 1, passwordResetExpiresAt: 1 });
 
 module.exports = mongoose.model("User", userSchema);
