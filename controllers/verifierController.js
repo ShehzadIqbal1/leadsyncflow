@@ -125,59 +125,145 @@ const updateEmailStatuses = asyncHandler(async function (req, res, next) {
 // 3) POST /api/verifier/leads/move-all-to-lq
 // Logic: Move ALL leads in Verifier stage to LQ stage using optimized bulk operations
 const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
-  // 1. Get all leads in Verifier stage
-  const leads = await Lead.find({ stage: "Verifier" }).select("_id");
-  if (leads.length === 0)
-    return next(httpError(statusCodes.NOT_FOUND, "No leads to move"));
+  const MAX_RETRIES = 3;
 
-  // 2. Fetch all LQs once (Don't call assignmentService inside the loop)
-  const lqs = await User.find({ role: "Lead Qualifiers", status: "APPROVED" })
-    .select("_id")
-    .sort({ _id: 1 });
-  if (lqs.length === 0)
-    return next(httpError(statusCodes.BAD_REQUEST, "No LQs available"));
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const session = await mongoose.startSession();
 
-  // 3. Get the starting point for Round-Robin from your Counter
-  const counter = await Counter.findOneAndUpdate(
-    { key: "LQ_ASSIGN" },
-    { $inc: { seq: leads.length } }, // Increment by the total number of leads at once
-    { new: true, upsert: true },
-  );
+    try {
+      session.startTransaction();
 
-  const startSeq = counter.seq - leads.length;
-  const now = new Date();
+      // 1. Get all approved Lead Qualifiers inside the transaction
+      const lqs = await User.find({
+        role: "Lead Qualifiers",
+        status: "APPROVED",
+      })
+        .select("_id")
+        .sort({ _id: 1 })
+        .session(session);
 
-  // 4. Prepare Bulk Operations
-  const bulkOps = leads.map((lead, index) => {
-    const lqIndex = (startSeq + index) % lqs.length;
-    const assignedLqId = lqs[lqIndex]._id;
+      if (lqs.length === 0) {
+        throw httpError(statusCodes.BAD_REQUEST, "No LQs available");
+      }
 
-    return {
-      updateOne: {
-        filter: { _id: lead._id },
-        update: {
-          $set: {
-            stage: "LQ",
-            assignedTo: assignedLqId,
-            assignedToRole: "Lead Qualifiers",
-            assignedAt: now,
-            verifiedCompletedAt: now,
-          },
+      // 2. Get all leads currently in Verifier stage inside the transaction
+      const leads = await Lead.find({ stage: "Verifier" })
+        .select("_id")
+        .sort({ _id: 1 })
+        .session(session);
+
+      if (leads.length === 0) {
+        await session.abortTransaction();
+        session.endSession();
+
+        return res.status(statusCodes.OK).json({
+          success: true,
+          message: "No leads were moved. They may have already been moved by another user.",
+          count: 0,
+        });
+      }
+
+      // 3. Increment the round-robin counter ONLY inside the same transaction
+      const counter = await Counter.findOneAndUpdate(
+        { key: "LQ_ASSIGN" },
+        { $inc: { seq: leads.length } },
+        {
+          new: true,
+          upsert: true,
+          session,
+          setDefaultsOnInsert: true,
         },
-      },
-    };
-  });
+      );
 
-  // 5. Execute everything in ONE database command
-  await Lead.bulkWrite(bulkOps);
+      const startSeq = counter.seq - leads.length;
+      const now = new Date();
 
-  return res.status(statusCodes.OK).json({
-    success: true,
-    message: `${leads.length} leads successfully distributed.`,
-    count: leads.length,
-  });
+      // 4. Build assignments deterministically
+      const bulkOps = leads.map((lead, index) => {
+        const lqIndex = (startSeq + index) % lqs.length;
+        const assignedLqId = lqs[lqIndex]._id;
+
+        return {
+          updateOne: {
+            filter: {
+              _id: lead._id,
+              stage: "Verifier",
+            },
+            update: {
+              $set: {
+                stage: "LQ",
+                assignedTo: assignedLqId,
+                assignedToRole: "Lead Qualifiers",
+                assignedAt: now,
+                verifiedCompletedAt: now,
+              },
+            },
+          },
+        };
+      });
+
+      // 5. Execute bulk write inside the same transaction
+      const result = await Lead.bulkWrite(bulkOps, { session });
+
+      const movedCount =
+        typeof result.modifiedCount === "number"
+          ? result.modifiedCount
+          : typeof result.nModified === "number"
+            ? result.nModified
+            : 0;
+
+      // 6. If anything changed unexpectedly, abort so Counter does not drift
+      if (movedCount !== leads.length) {
+        throw httpError(
+          statusCodes.CONFLICT,
+          "Lead movement conflicted with another request. Please try again.",
+        );
+      }
+
+      // 7. Commit only when everything matches
+      await session.commitTransaction();
+      session.endSession();
+
+      return res.status(statusCodes.OK).json({
+        success: true,
+        message: `${movedCount} leads successfully distributed.`,
+        count: movedCount,
+      });
+    } catch (error) {
+      try {
+        await session.abortTransaction();
+      } catch (abortError) {
+        // ignore abort error
+      }
+      session.endSession();
+
+      const isRetryable =
+        error &&
+        (
+          error.code === 112 || // WriteConflict
+          error.codeName === "WriteConflict" ||
+          (typeof error.hasErrorLabel === "function" &&
+            (
+              error.hasErrorLabel("TransientTransactionError") ||
+              error.hasErrorLabel("UnknownTransactionCommitResult")
+            ))
+        );
+
+      if (isRetryable && attempt < MAX_RETRIES) {
+        continue;
+      }
+
+      return next(error);
+    }
+  }
+
+  return next(
+    httpError(
+      statusCodes.CONFLICT,
+      "Unable to move leads at this time. Please try again.",
+    ),
+  );
 });
-
 module.exports = {
   getDmLeads,
   updateEmailStatuses,
