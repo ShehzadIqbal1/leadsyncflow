@@ -122,49 +122,64 @@ const getMyLeads = asyncHandler(async function (req, res, next) {
   });
 });
 
-// ---------------------------------------------
-// PATCH /api/lq/leads/:leadId/status
-// body: { lqStatus }
+// PATCH /api/lq/leads/status
+// body: { leadIds: "id1" } OR { leadIds: ["id1", "id2"] }
 // ---------------------------------------------
 const updateLqStatus = asyncHandler(async function (req, res, next) {
-  const leadId = req.params.leadId;
-  const lqStatus = String((req.body && req.body.lqStatus) || "")
+  const { leadIds: rawIds, lqStatus: rawStatus } = req.body;
+
+  // 1. Normalize leadIds to always be an array
+  // If it's a string, wrap it: ["id1"]. If it's already an array, keep it.
+  const leadIds = Array.isArray(rawIds) ? rawIds : [rawIds].filter(Boolean);
+
+  const lqStatus = String(rawStatus || "")
     .trim()
     .toUpperCase();
 
-  if (!isValidObjectId(leadId)) {
-    return next(httpError(statusCodes.BAD_REQUEST, "Invalid leadId"));
+  // 2. Validation
+  if (leadIds.length === 0) {
+    return next(
+      httpError(statusCodes.BAD_REQUEST, "No valid leadId(s) provided"),
+    );
   }
 
   if (!isValidLqStatus(lqStatus)) {
     return next(httpError(statusCodes.BAD_REQUEST, "Invalid lqStatus"));
   }
 
-  const lead = await Lead.findOne({
-    _id: leadId,
-    stage: "LQ",
-    assignedTo: req.user.id,
-  });
+  // 3. Database Operation (Works for 1 or 100 IDs)
+  const result = await Lead.updateMany(
+    {
+      _id: { $in: leadIds },
+      stage: "LQ",
+      assignedTo: req.user.id,
+    },
+    {
+      $set: {
+        lqStatus: lqStatus,
+        lqUpdatedAt: new Date(),
+        lqUpdatedBy: req.user.id,
+      },
+    },
+  );
 
-  if (!lead) {
+  // 4. Smart Response
+  if (result.matchedCount === 0) {
     return next(
-      httpError(statusCodes.NOT_FOUND, "Lead not found / not assigned to you"),
+      httpError(
+        statusCodes.NOT_FOUND,
+        "No matching leads found/assigned to you",
+      ),
     );
   }
 
-  lead.lqStatus = lqStatus;
-  lead.lqUpdatedAt = new Date();
-  lead.lqUpdatedBy = req.user.id;
-
-  await lead.save();
-
   return res.status(statusCodes.OK).json({
     success: true,
-    message: "LQ status updated",
-    lqStatus: lead.lqStatus,
+    message: `Successfully updated ${result.modifiedCount} lead(s)`,
+    updatedCount: result.modifiedCount,
+    lqStatus: lqStatus,
   });
 });
-
 // ---------------------------------------------
 // POST /api/lq/leads/:leadId/comment
 // body: { text }
@@ -251,9 +266,7 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
 
   selectedPhones = [
     ...new Set(
-      selectedPhones
-        .map((x) => String(x || "").trim())
-        .filter(Boolean),
+      selectedPhones.map((x) => String(x || "").trim()).filter(Boolean),
     ),
   ];
 
@@ -423,7 +436,9 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
   const responseSource = {
     emails: selectedEmailPicks.map((emailObj) => ({
       value: String(emailObj.value || ""),
-      normalized: String(emailObj.normalized || "").trim().toLowerCase(),
+      normalized: String(emailObj.normalized || "")
+        .trim()
+        .toLowerCase(),
       selectedBy: req.user.id,
       selectedAt: pkt.now,
       selectedDate: pkt.pktDate,
@@ -461,7 +476,8 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
 
   return res.status(statusCodes.OK).json({
     success: true,
-    message: "Lead submitted to your assigned manager with selected response contacts",
+    message:
+      "Lead submitted to your assigned manager with selected response contacts",
     leadId: String(lead._id),
     assignedTo: String(manager._id),
     assignedToRole: "Manager",
