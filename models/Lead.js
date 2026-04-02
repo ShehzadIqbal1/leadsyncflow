@@ -1,4 +1,3 @@
-// models/Lead.js
 const mongoose = require("mongoose");
 
 const SourceSchema = new mongoose.Schema(
@@ -11,8 +10,8 @@ const SourceSchema = new mongoose.Schema(
 
 const EmailSchema = new mongoose.Schema(
   {
-    value: { type: String, required: true, trim: true }, // raw
-    normalized: { type: String, required: true, trim: true }, // full normalized email
+    value: { type: String, required: true, trim: true },
+    normalized: { type: String, required: true, trim: true },
     status: {
       type: String,
       enum: ["PENDING", "ACTIVE", "BOUNCED", "DEAD"],
@@ -59,35 +58,43 @@ const ResponseSourceSchema = new mongoose.Schema(
   },
   { _id: false },
 );
+
 const LeadSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
-
     emails: { type: [EmailSchema], default: [] },
-
     phones: { type: [String], default: [] },
     phonesNormalized: { type: [String], default: [] },
-
     location: { type: String, trim: true, default: "" },
-
-    // keep as array; enforce "at least 1" in validator
     sources: { type: [SourceSchema], default: [] },
 
-    // workflow
-    stage: { type: String, default: "DM" }, // DM -> LQ -> MANAGER (Verifier works while stage is DM)
-    status: { type: String, default: "UNPAID" }, // manager can set PAID
+    stage: { type: String, default: "DM" },
+    status: { type: String, default: "UNPAID" },
 
-    // assignment
     assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     assignedToRole: { type: String, default: "" },
     assignedAt: { type: Date },
     verifiedCompletedAt: { type: Date },
 
-    // DM UI fields (PKT)
+    // verifier batch claim system
+    v_claimedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    v_claimedAt: {
+      type: Date,
+      default: null,
+    },
+    v_batchId: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
     submittedDate: { type: String, default: "" },
     submittedTime: { type: String, default: "" },
 
-    // LQ stage fields
     lqStatus: {
       type: String,
       enum: ["PENDING", "REACHED", "DEAD", "QUALIFIED"],
@@ -96,8 +103,6 @@ const LeadSchema = new mongoose.Schema(
     comments: { type: [CommentSchema], default: [] },
     lqUpdatedAt: { type: Date },
     lqUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-
-    // LQ chooses which email/phone drove the response
     responseSource: { type: ResponseSourceSchema, default: undefined },
 
     createdBy: {
@@ -105,12 +110,11 @@ const LeadSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    // rejection system
+
     rejectionRequested: { type: Boolean, default: false },
     rejectionRequestedAt: { type: Date },
     rejectionRequestedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
 
-    // upsell system
     upsales: [
       {
         amount: { type: Number, required: true },
@@ -121,24 +125,23 @@ const LeadSchema = new mongoose.Schema(
         addedTime: { type: String },
       },
     ],
-    superAdminReturnPriorityUntil: { type: Date }, // 24hr priority system
+
+    superAdminReturnPriorityUntil: { type: Date },
   },
   { timestamps: true },
 );
 
-// --------------------
-// Duplicate-check indexes (full email + full phone normalized)
-// --------------------
 LeadSchema.index({ "emails.normalized": 1 });
 LeadSchema.index({ phonesNormalized: 1 });
 
-// --------------------
-// Dashboard / filtering indexes
-// --------------------
 LeadSchema.index({ stage: 1, createdAt: -1 });
 LeadSchema.index({ assignedTo: 1, stage: 1, createdAt: -1 });
 LeadSchema.index({ lqStatus: 1, stage: 1 });
 LeadSchema.index({ status: 1, stage: 1 });
 LeadSchema.index({ assignedTo: 1, stage: 1, assignedAt: -1 });
+
+// new verifier claim indexes
+LeadSchema.index({ stage: 1, v_claimedBy: 1, _id: 1 });
+LeadSchema.index({ stage: 1, v_batchId: 1 });
 
 module.exports = mongoose.model("Lead", LeadSchema);
