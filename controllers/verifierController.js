@@ -54,46 +54,42 @@ async function fetchClaimedDmLeadsForVerifier(userId, limit, skip) {
 // Returns only claimed DM leads having emails.
 // Does not return phone-only leads.
 const getDmLeads = asyncHandler(async function (req, res, next) {
-  let limit = parseInt(req.query.limit || "20", 10);
-  let skip = parseInt(req.query.skip || "0", 10);
-
-  if (isNaN(limit) || limit < 1) limit = 20;
-  if (limit > MAX_VERIFIER_BATCH_SIZE) limit = MAX_VERIFIER_BATCH_SIZE;
-  if (isNaN(skip) || skip < 0) skip = 0;
-
   const verifierId = req.user.id;
 
-  // existing claimed DM email leads only
+  // Check if verifier already has claimed leads
   const existingClaimCount = await Lead.countDocuments({
     stage: "DM",
     v_claimedBy: verifierId,
     "emails.0": { $exists: true },
   });
 
+  //  If already claimed → return full batch
   if (existingClaimCount > 0) {
-    const { leads, totalLeads } = await fetchClaimedDmLeadsForVerifier(
-      verifierId,
-      limit,
-      skip,
-    );
+    const leads = await Lead.find({
+      stage: "DM",
+      v_claimedBy: verifierId,
+      "emails.0": { $exists: true },
+    })
+      .sort({ _id: 1 })
+      .select("_id emails");
 
     return res.status(statusCodes.OK).json({
       success: true,
       message: "Existing claimed batch returned.",
       batchClaimed: false,
-      totalLeads,
-      limit,
-      skip,
+      totalLeads: leads.length,
       leads,
     });
   }
 
+  // Retry logic for race conditions
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     const session = await mongoose.startSession();
 
     try {
       session.startTransaction();
 
+      // Double-check inside transaction
       const stillHasClaimedDm = await Lead.countDocuments({
         stage: "DM",
         v_claimedBy: verifierId,
@@ -104,23 +100,24 @@ const getDmLeads = asyncHandler(async function (req, res, next) {
         await session.commitTransaction();
         session.endSession();
 
-        const { leads, totalLeads } = await fetchClaimedDmLeadsForVerifier(
-          verifierId,
-          limit,
-          skip,
-        );
+        const leads = await Lead.find({
+          stage: "DM",
+          v_claimedBy: verifierId,
+          "emails.0": { $exists: true },
+        })
+          .sort({ _id: 1 })
+          .select("_id emails");
 
         return res.status(statusCodes.OK).json({
           success: true,
           message: "Existing claimed batch returned.",
           batchClaimed: false,
-          totalLeads,
-          limit,
-          skip,
+          totalLeads: leads.length,
           leads,
         });
       }
 
+      // Count verifiers
       const approvedVerifierCount = await User.countDocuments({
         role: "Verifier",
         status: "APPROVED",
@@ -128,10 +125,15 @@ const getDmLeads = asyncHandler(async function (req, res, next) {
 
       const verifierCount = Math.max(1, approvedVerifierCount);
 
-      // only unclaimed DM leads with emails are claimable for verifier UI
-      const totalUnclaimedDmLeads = await Lead.countDocuments(
-        getUnclaimedDmEmailLeadsFilter(),
-      ).session(session);
+      // Count unclaimed email leads only
+      const totalUnclaimedDmLeads = await Lead.countDocuments({
+        stage: "DM",
+        "emails.0": { $exists: true },
+        $or: [
+          { v_claimedBy: { $exists: false } },
+          { v_claimedBy: null },
+        ],
+      }).session(session);
 
       if (totalUnclaimedDmLeads === 0) {
         await session.commitTransaction();
@@ -142,12 +144,11 @@ const getDmLeads = asyncHandler(async function (req, res, next) {
           message: "No DM email leads available to claim.",
           batchClaimed: false,
           totalLeads: 0,
-          limit,
-          skip,
           leads: [],
         });
       }
 
+      // Batch size logic (unchanged)
       const currentBatchSize = Math.min(
         MAX_VERIFIER_BATCH_SIZE,
         Math.max(1, Math.ceil(totalUnclaimedDmLeads / verifierCount)),
@@ -160,34 +161,42 @@ const getDmLeads = asyncHandler(async function (req, res, next) {
           new: true,
           upsert: true,
           session,
-          setDefaultsOnInsert: true,
         },
       );
 
       const startSeq = counter.seq - currentBatchSize;
 
-      let leadsToClaim = await Lead.find(getUnclaimedDmEmailLeadsFilter())
+      let leadsToClaim = await Lead.find({
+        stage: "DM",
+        "emails.0": { $exists: true },
+        $or: [
+          { v_claimedBy: { $exists: false } },
+          { v_claimedBy: null },
+        ],
+      })
         .sort({ _id: 1 })
         .skip(startSeq)
         .limit(currentBatchSize)
         .select("_id")
         .session(session);
 
+      // Reset counter fallback
       if (leadsToClaim.length === 0 && totalUnclaimedDmLeads > 0) {
         await Counter.findOneAndUpdate(
           { key: "VERIFIER_BATCH_SEQ" },
           { $set: { seq: 0 } },
-          {
-            new: true,
-            upsert: true,
-            session,
-            setDefaultsOnInsert: true,
-          },
+          { session },
         );
 
-        leadsToClaim = await Lead.find(getUnclaimedDmEmailLeadsFilter())
+        leadsToClaim = await Lead.find({
+          stage: "DM",
+          "emails.0": { $exists: true },
+          $or: [
+            { v_claimedBy: { $exists: false } },
+            { v_claimedBy: null },
+          ],
+        })
           .sort({ _id: 1 })
-          .skip(0)
           .limit(currentBatchSize)
           .select("_id")
           .session(session);
@@ -202,8 +211,6 @@ const getDmLeads = asyncHandler(async function (req, res, next) {
           message: "No DM email leads available to claim.",
           batchClaimed: false,
           totalLeads: 0,
-          limit,
-          skip,
           leads: [],
         });
       }
@@ -217,7 +224,10 @@ const getDmLeads = asyncHandler(async function (req, res, next) {
             _id: lead._id,
             stage: "DM",
             "emails.0": { $exists: true },
-            $or: [{ v_claimedBy: { $exists: false } }, { v_claimedBy: null }],
+            $or: [
+              { v_claimedBy: { $exists: false } },
+              { v_claimedBy: null },
+            ],
           },
           update: {
             $set: {
@@ -229,60 +239,36 @@ const getDmLeads = asyncHandler(async function (req, res, next) {
         },
       }));
 
-      const result = await Lead.bulkWrite(bulkOps, { session });
-
-      const claimedCount =
-        typeof result.modifiedCount === "number"
-          ? result.modifiedCount
-          : typeof result.nModified === "number"
-            ? result.nModified
-            : 0;
-
-      if (claimedCount !== leadsToClaim.length) {
-        throw httpError(
-          statusCodes.CONFLICT,
-          "Lead claim conflicted with another request. Please try again.",
-        );
-      }
+      await Lead.bulkWrite(bulkOps, { session });
 
       await session.commitTransaction();
       session.endSession();
 
-      const { leads, totalLeads } = await fetchClaimedDmLeadsForVerifier(
-        verifierId,
-        limit,
-        skip,
-      );
+      // ✅ Return FULL batch (no limit)
+      const leads = await Lead.find({
+        stage: "DM",
+        v_claimedBy: verifierId,
+        "emails.0": { $exists: true },
+      })
+        .sort({ _id: 1 })
+        .select("_id emails");
 
       return res.status(statusCodes.OK).json({
         success: true,
         message: "New DM batch claimed successfully.",
         batchClaimed: true,
         batchId,
-        totalLeads,
-        limit,
-        skip,
+        totalLeads: leads.length,
         leads,
       });
     } catch (error) {
       try {
         await session.abortTransaction();
-      } catch (abortError) {
-        // ignore
-      }
+      } catch (_) {}
+
       session.endSession();
 
-      const isRetryable =
-        error &&
-        (error.code === 112 ||
-          error.codeName === "WriteConflict" ||
-          (typeof error.hasErrorLabel === "function" &&
-            (error.hasErrorLabel("TransientTransactionError") ||
-              error.hasErrorLabel("UnknownTransactionCommitResult"))));
-
-      if (isRetryable && attempt < MAX_RETRIES) {
-        continue;
-      }
+      if (attempt < MAX_RETRIES) continue;
 
       return next(error);
     }
