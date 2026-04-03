@@ -22,34 +22,6 @@ function isValidObjectId(id) {
 function buildBatchId(userId) {
   return `VB-${String(userId)}-${Date.now()}-${new mongoose.Types.ObjectId()}`;
 }
-
-function getUnclaimedDmEmailLeadsFilter() {
-  return {
-    stage: "DM",
-    "emails.0": { $exists: true }, // only leads having at least 1 email
-    $or: [{ v_claimedBy: { $exists: false } }, { v_claimedBy: null }],
-  };
-}
-
-async function fetchClaimedDmLeadsForVerifier(userId, limit, skip) {
-  const filter = {
-    stage: "DM",
-    v_claimedBy: userId,
-    "emails.0": { $exists: true }, // only email leads for verifier UI
-  };
-
-  const [leads, totalLeads] = await Promise.all([
-    Lead.find(filter)
-      .sort({ _id: 1 })
-      .skip(skip)
-      .limit(limit)
-      .select("_id emails"),
-    Lead.countDocuments(filter),
-  ]);
-
-  return { leads, totalLeads };
-}
-
 // 1) GET /api/verifier/leads
 // Returns only claimed DM leads having emails.
 // Does not return phone-only leads.

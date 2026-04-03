@@ -511,7 +511,6 @@ const getMyStats = asyncHandler(async function (req, res, next) {
     {
       $match: {
         assignedTo: userId, // Match leads assigned to this user
-        stage: "LQ", // Ensure they are still in the LQ stage
         ...(range ? { assignedAt: range } : {}), // Filter by assignment date
       },
     },
@@ -528,7 +527,7 @@ const getMyStats = asyncHandler(async function (req, res, next) {
 
         // 3. Leads that have reached the MANAGER stage (Qualified)
         qualified: {
-          $sum: { $cond: [{ $eq: ["$stage", "MANAGER"] }, 1, 0] },
+          $sum: { $cond: [{ $eq: ["$stage", "MANAGER"] }, 1, 0] }, 
         },
 
         // 4. Other Statuses
