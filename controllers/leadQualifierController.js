@@ -510,30 +510,30 @@ const getMyStats = asyncHandler(async function (req, res, next) {
   const pipeline = [
     {
       $match: {
-        assignedTo: userId, // Match leads assigned to this user
-        ...(range ? { assignedAt: range } : {}), // Filter by assignment date
+        $or: [
+          { assignedTo: userId, stage: "LQ" },
+          { lqUpdatedBy: userId, lqStatus: "QUALIFIED" },
+        ],
+        ...(range ? { lqUpdatedAt: range } : {}),
       },
     },
     {
       $group: {
         _id: null,
-        // 1. Total leads received in this time range
         totalReceived: { $sum: 1 },
 
-        // 2. Leads that are currently PENDING
         pending: {
           $sum: { $cond: [{ $eq: ["$lqStatus", "PENDING"] }, 1, 0] },
         },
 
-        // 3. Leads that have reached the MANAGER stage (Qualified)
         qualified: {
-          $sum: { $cond: [{ $eq: ["$stage", "MANAGER"] }, 1, 0] }, 
+          $sum: { $cond: [{ $eq: ["$lqStatus", "QUALIFIED"] }, 1, 0] },
         },
 
-        // 4. Other Statuses
         reached: {
           $sum: { $cond: [{ $eq: ["$lqStatus", "REACHED"] }, 1, 0] },
         },
+
         dead: {
           $sum: { $cond: [{ $eq: ["$lqStatus", "DEAD"] }, 1, 0] },
         },
