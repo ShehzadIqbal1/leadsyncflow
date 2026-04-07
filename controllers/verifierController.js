@@ -7,7 +7,6 @@ const httpError = require("../utils/httpError");
 const asyncHandler = require("../middlewares/asyncHandler");
 
 const MAX_VERIFIER_BATCH_SIZE = 120;
-const MIN_MOVE_TO_LQ = 100;
 const MAX_MOVE_TO_LQ = 1000;
 const MAX_RETRIES = 3;
 
@@ -350,7 +349,7 @@ const updateEmailStatuses = asyncHandler(async function (req, res, next) {
 
 // 3) POST /api/verifier/leads/move-all-to-lq
 // Move only THIS verifier's verified leads to LQ
-// Enforce 100..1000 movement limit
+// Enforce maximum of 1000 leads per move operation
 const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     const session = await mongoose.startSession();
@@ -406,10 +405,10 @@ const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
         });
       }
 
-      if (leads.length < MIN_MOVE_TO_LQ || leads.length > MAX_MOVE_TO_LQ) {
+      if (leads.length > MAX_MOVE_TO_LQ) {
         throw httpError(
           statusCodes.BAD_REQUEST,
-          `Verifier can move only between ${MIN_MOVE_TO_LQ} and ${MAX_MOVE_TO_LQ} leads to LQ at a time. Current count: ${leads.length}.`,
+          `Cannot move more than ${MAX_MOVE_TO_LQ} leads to LQ at a time. Current count: ${leads.length}.`,
         );
       }
 
