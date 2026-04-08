@@ -43,6 +43,7 @@ const getOverview = asyncHandler(async function (req, res, next) {
         _id: null,
         totalLeads: { $sum: 1 },
         dmCount: { $sum: { $cond: [{ $eq: ["$stage", "DM"] }, 1, 0] } },
+        verifierCount: { $sum: { $cond: [{ $eq: ["$stage", "Verifier"] }, 1, 0] } },
         lqCount: { $sum: { $cond: [{ $eq: ["$stage", "LQ"] }, 1, 0] } },
         managerCount: {
           $sum: { $cond: [{ $eq: ["$stage", "MANAGER"] }, 1, 0] },
@@ -51,9 +52,6 @@ const getOverview = asyncHandler(async function (req, res, next) {
           $sum: { $cond: [{ $eq: ["$status", "UNPAID"] }, 1, 0] },
         },
         paidCount: { $sum: { $cond: [{ $eq: ["$status", "PAID"] }, 1, 0] } },
-        qualifiedCount: {
-          $sum: { $cond: [{ $eq: ["$lqStatus", "QUALIFIED"] }, 1, 0] },
-        },
       },
     },
     { $project: { _id: 0 } },
@@ -62,11 +60,11 @@ const getOverview = asyncHandler(async function (req, res, next) {
   const totals = totalsAgg[0] || {
     totalLeads: 0,
     dmCount: 0,
+    verifierCount: 0,
     lqCount: 0,
     managerCount: 0,
     unpaidCount: 0,
     paidCount: 0,
-    qualifiedCount: 0,
   };
 
   function pct(a, b) {
@@ -630,7 +628,7 @@ const decideRejectionRequest = asyncHandler(async function (req, res, next) {
         text: comment,
         createdBy: req.user.id,
         createdByRole: "Super Admin",
-        createdAt: new Date(),      
+        createdAt: new Date(),
       });
     }
   }
