@@ -381,8 +381,8 @@ const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
         .session(session);
 
       // 2) New logic: ALL phone-only DM leads, no ownership check
-      const phoneOnlyDmLeads = await Lead.find({
-        stage: "DM",
+      const phoneOnlyVerifierLeads = await Lead.find({
+        stage: "Verifier",
         $or: [
           { emails: { $exists: false } },
           { "emails.0": { $exists: false } },
@@ -392,7 +392,7 @@ const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
         .sort({ _id: 1 })
         .session(session);
 
-      const leads = [...verifiedEmailLeads, ...phoneOnlyDmLeads];
+      const leads = [...verifiedEmailLeads, ...phoneOnlyVerifierLeads];
 
       if (leads.length === 0) {
         await session.commitTransaction();
@@ -442,7 +442,7 @@ const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
                 },
                 // new phone-only rule: move any phone-only DM lead
                 {
-                  stage: "DM",
+                  stage: "Verifier",
                   $or: [
                     { emails: { $exists: false } },
                     { "emails.0": { $exists: false } },
