@@ -59,16 +59,16 @@ async function findDuplicates(emailNorms, phoneNorms) {
   tasks.push(
     emailNorms && emailNorms.length
       ? Lead.distinct("emails.normalized", {
-          "emails.normalized": { $in: emailNorms },
-        })
+        "emails.normalized": { $in: emailNorms },
+      })
       : Promise.resolve([]),
   );
 
   tasks.push(
     phoneNorms && phoneNorms.length
       ? Lead.distinct("phonesNormalized", {
-          phonesNormalized: { $in: phoneNorms },
-        })
+        phonesNormalized: { $in: phoneNorms },
+      })
       : Promise.resolve([]),
   );
 
@@ -158,6 +158,7 @@ const liveDuplicateCheck = asyncHandler(async function (req, res, next) {
 
 // ---------------------------------------------
 // GET /api/dm/stats  (PKT-correct)
+// FIXED: Now uses submittedDate instead of createdAt
 // ---------------------------------------------
 const getMyStats = asyncHandler(async function (req, res, next) {
   const userId = req.user.id;
@@ -170,22 +171,22 @@ const getMyStats = asyncHandler(async function (req, res, next) {
 
   const pkt = getPktNow();
 
-  let range = null;
+  let dateMatch = null;
 
   function isYmd(s) {
     return /^\d{4}-\d{2}-\d{2}$/.test(s);
   }
 
+  // Get today's date in PKT format (YYYY-MM-DD string)
+  const todayDateStr = pkt.pktDate; // This should already be YYYY-MM-DD
+
   // ---------------------------------------
   // TODAY FILTER
   // ---------------------------------------
   if (today === "true" || today === "1") {
-    const day = pktDayRangeUtc(pkt.pktDate);
-
-    range = {
-      $gte: day.start,
-      $lte: day.end,
-    };
+    // Filter by today's date (submittedDate = today's date in PKT)
+    dateMatch =
+      todayDateStr;
   }
 
   // ---------------------------------------
@@ -200,16 +201,16 @@ const getMyStats = asyncHandler(async function (req, res, next) {
       return next(httpError(statusCodes.BAD_REQUEST, "Invalid to date"));
     }
 
-    range = {};
+    dateMatch = {};
 
     if (from) {
-      const start = pktDayRangeUtc(from);
-      range.$gte = start.start;
+      // $gte: submittedDate >= from
+      dateMatch.$gte = from;
     }
 
     if (to) {
-      const end = pktDayRangeUtc(to);
-      range.$lte = end.end;
+      // $lte: submittedDate <= to
+      dateMatch.$lte = to;
     }
   }
 
@@ -220,8 +221,9 @@ const getMyStats = asyncHandler(async function (req, res, next) {
     createdBy: userId,
   };
 
-  if (range) {
-    query.createdAt = range;
+  // Use submittedDate field instead of createdAt
+  if (dateMatch) {
+    query.submittedDate = dateMatch;
   }
 
   // ---------------------------------------
@@ -239,7 +241,6 @@ const getMyStats = asyncHandler(async function (req, res, next) {
     totalCount: totalCount,
   });
 });
-
 // ---------------------------------------------
 // POST /api/dm/leads
 // ---------------------------------------------
