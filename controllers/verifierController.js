@@ -7,7 +7,7 @@ const httpError = require("../utils/httpError");
 const asyncHandler = require("../middlewares/asyncHandler");
 
 const MAX_VERIFIER_BATCH_SIZE = 120;
-const MAX_MOVE_TO_LQ = 1000;
+const MAX_MOVE_TO_LQ = 100000;
 const MAX_RETRIES = 3;
 
 function isValidEmailStatus(s) {
