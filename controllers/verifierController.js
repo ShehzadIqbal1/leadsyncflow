@@ -347,9 +347,6 @@ const updateEmailStatuses = asyncHandler(async function (req, res, next) {
   });
 });
 
-// 3) POST /api/verifier/leads/move-all-to-lq
-// Move only THIS verifier's verified leads to LQ
-// Enforce maximum of 1000 leads per move operation
 const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     const session = await mongoose.startSession();
@@ -358,20 +355,23 @@ const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
       session.startTransaction();
 
       const verifierId = req.user.id;
-
+      
       const lqs = await User.find({
         role: "Lead Qualifiers",
         status: "APPROVED",
+        reportsTo: { $exists: true, $ne: null },
       })
-        .select("_id")
+        .select("_id reportsTo")
         .sort({ _id: 1 })
         .session(session);
 
       if (lqs.length === 0) {
-        throw httpError(statusCodes.BAD_REQUEST, "No LQs available");
+        throw httpError(
+          statusCodes.BAD_REQUEST,
+          "No approved Lead Qualifiers with assigned managers available"
+        );
       }
 
-      // 1) Existing logic: only this verifier's verified email leads
       const verifiedEmailLeads = await Lead.find({
         stage: "Verifier",
         v_claimedBy: verifierId,
@@ -380,7 +380,6 @@ const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
         .sort({ _id: 1 })
         .session(session);
 
-      // 2) New logic: ALL phone-only DM leads, no ownership check
       const phoneOnlyVerifierLeads = await Lead.find({
         stage: "Verifier",
         $or: [
@@ -408,7 +407,7 @@ const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
       if (leads.length > MAX_MOVE_TO_LQ) {
         throw httpError(
           statusCodes.BAD_REQUEST,
-          `Cannot move more than ${MAX_MOVE_TO_LQ} leads to LQ at a time. Current count: ${leads.length}.`,
+          `Cannot move more than ${MAX_MOVE_TO_LQ} leads to LQ at a time. Current count: ${leads.length}.`
         );
       }
 
@@ -420,7 +419,7 @@ const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
           upsert: true,
           session,
           setDefaultsOnInsert: true,
-        },
+        }
       );
 
       const startSeq = counter.seq - leads.length;
@@ -435,12 +434,10 @@ const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
             filter: {
               _id: lead._id,
               $or: [
-                // keep existing ownership check for verified email leads
                 {
                   stage: "Verifier",
                   v_claimedBy: verifierId,
                 },
-                // new phone-only rule: move any phone-only DM lead
                 {
                   stage: "Verifier",
                   $or: [
@@ -477,17 +474,14 @@ const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
             ? result.nModified
             : 0;
 
-      // Silent skip behavior:
-      // if some phone-only leads were already moved by another verifier,
-      // they simply won't match the filter anymore. No error.
-      // Only fail if nothing moved at all while we expected everything.
       if (movedCount === 0 && leads.length > 0) {
         await session.commitTransaction();
         session.endSession();
 
         return res.status(statusCodes.OK).json({
           success: true,
-          message: "No leads were moved. They may have already been moved by another request.",
+          message:
+            "No leads were moved. They may have already been moved by another request.",
           count: 0,
         });
       }
@@ -503,22 +497,17 @@ const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
     } catch (error) {
       try {
         await session.abortTransaction();
-      } catch (abortError) {
-        // ignore
-      }
+      } catch (abortError) {}
+
       session.endSession();
 
       const isRetryable =
         error &&
-        (
-          error.code === 112 ||
+        (error.code === 112 ||
           error.codeName === "WriteConflict" ||
           (typeof error.hasErrorLabel === "function" &&
-            (
-              error.hasErrorLabel("TransientTransactionError") ||
-              error.hasErrorLabel("UnknownTransactionCommitResult")
-            ))
-        );
+            (error.hasErrorLabel("TransientTransactionError") ||
+              error.hasErrorLabel("UnknownTransactionCommitResult"))));
 
       if (isRetryable && attempt < MAX_RETRIES) {
         continue;
@@ -531,8 +520,8 @@ const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
   return next(
     httpError(
       statusCodes.CONFLICT,
-      "Unable to move leads at this time. Please try again.",
-    ),
+      "Unable to move leads at this time. Please try again."
+    )
   );
 });
 
