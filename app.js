@@ -16,6 +16,7 @@ const verifierRoutes = require("./routes/verifierRoutes");
 const leadQualifierRoutes = require("./routes/leadQualifierRoutes");
 const managerRoutes = require("./routes/managerRoutes");
 const bootstrapSuperAdmin = require("./scripts/bootstrapSuperAdmin");
+const  leadSearchRoutes = require("./routes/leadSearchRoutes");
 
 const app = express();
 
@@ -35,7 +36,7 @@ app.use("/api/dm", dataMinorRoutes);
 app.use("/api/verifier", verifierRoutes);
 app.use("/api/lq", leadQualifierRoutes);
 app.use("/api/manager", managerRoutes);
-
+app.use("/api/leads/search", leadSearchRoutes);
 app.use(errorHandler);
 
 const port = process.env.PORT || 5000;

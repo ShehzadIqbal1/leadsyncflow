@@ -133,7 +133,8 @@ const LeadSchema = new mongoose.Schema(
 
 LeadSchema.index({ "emails.normalized": 1 });
 LeadSchema.index({ phonesNormalized: 1 });
-
+LeadSchema.index({ "responseSource.emails.normalized": 1 });
+LeadSchema.index({ "responseSource.phones.normalized": 1 });
 LeadSchema.index({ stage: 1, createdAt: -1 });
 LeadSchema.index({ assignedTo: 1, stage: 1, createdAt: -1 });
 LeadSchema.index({ lqStatus: 1, stage: 1 });
