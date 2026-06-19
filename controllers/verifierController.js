@@ -100,10 +100,7 @@ const getDmLeads = asyncHandler(async function (req, res, next) {
       const totalUnclaimedDmLeads = await Lead.countDocuments({
         stage: "DM",
         "emails.0": { $exists: true },
-        $or: [
-          { v_claimedBy: { $exists: false } },
-          { v_claimedBy: null },
-        ],
+        $or: [{ v_claimedBy: { $exists: false } }, { v_claimedBy: null }],
       }).session(session);
 
       if (totalUnclaimedDmLeads === 0) {
@@ -140,10 +137,7 @@ const getDmLeads = asyncHandler(async function (req, res, next) {
       let leadsToClaim = await Lead.find({
         stage: "DM",
         "emails.0": { $exists: true },
-        $or: [
-          { v_claimedBy: { $exists: false } },
-          { v_claimedBy: null },
-        ],
+        $or: [{ v_claimedBy: { $exists: false } }, { v_claimedBy: null }],
       })
         .sort({ _id: 1 })
         .skip(startSeq)
@@ -162,10 +156,7 @@ const getDmLeads = asyncHandler(async function (req, res, next) {
         leadsToClaim = await Lead.find({
           stage: "DM",
           "emails.0": { $exists: true },
-          $or: [
-            { v_claimedBy: { $exists: false } },
-            { v_claimedBy: null },
-          ],
+          $or: [{ v_claimedBy: { $exists: false } }, { v_claimedBy: null }],
         })
           .sort({ _id: 1 })
           .limit(currentBatchSize)
@@ -195,10 +186,7 @@ const getDmLeads = asyncHandler(async function (req, res, next) {
             _id: lead._id,
             stage: "DM",
             "emails.0": { $exists: true },
-            $or: [
-              { v_claimedBy: { $exists: false } },
-              { v_claimedBy: null },
-            ],
+            $or: [{ v_claimedBy: { $exists: false } }, { v_claimedBy: null }],
           },
           update: {
             $set: {
@@ -215,7 +203,7 @@ const getDmLeads = asyncHandler(async function (req, res, next) {
       await session.commitTransaction();
       session.endSession();
 
-      // ✅ Return FULL batch (no limit)
+      // Return FULL batch (no limit)
       const leads = await Lead.find({
         stage: "DM",
         v_claimedBy: verifierId,
@@ -300,8 +288,12 @@ const updateEmailStatuses = asyncHandler(async function (req, res, next) {
   const incomingMap = new Map();
 
   for (const row of incomingArr) {
-    const norm = String(row.normalized || "").trim().toLowerCase();
-    const status = String(row.status || "").trim().toUpperCase();
+    const norm = String(row.normalized || "")
+      .trim()
+      .toLowerCase();
+    const status = String(row.status || "")
+      .trim()
+      .toUpperCase();
 
     if (norm && isValidEmailStatus(status)) {
       incomingMap.set(norm, status);
@@ -313,7 +305,9 @@ const updateEmailStatuses = asyncHandler(async function (req, res, next) {
   let missingCount = 0;
 
   for (const e of lead.emails) {
-    const norm = String(e.normalized || "").trim().toLowerCase();
+    const norm = String(e.normalized || "")
+      .trim()
+      .toLowerCase();
     const nextStatus = incomingMap.get(norm);
 
     if (!nextStatus) {
@@ -348,6 +342,27 @@ const updateEmailStatuses = asyncHandler(async function (req, res, next) {
 });
 
 const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
+  const requestedMoveCount = parseInt(req.body && req.body.moveCount, 10);
+
+  if (isNaN(requestedMoveCount) || requestedMoveCount < 1) {
+    return next(
+      httpError(
+        statusCodes.BAD_REQUEST,
+        "moveCount is required and must be greater than 0",
+      ),
+    );
+  }
+
+  // API load safety only
+  if (requestedMoveCount > MAX_MOVE_TO_LQ) {
+    return next(
+      httpError(
+        statusCodes.BAD_REQUEST,
+        `Cannot move more than ${MAX_MOVE_TO_LQ} leads in one API call.`,
+      ),
+    );
+  }
+
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     const session = await mongoose.startSession();
 
@@ -355,7 +370,7 @@ const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
       session.startTransaction();
 
       const verifierId = req.user.id;
-      
+
       const lqs = await User.find({
         role: "Lead Qualifiers",
         status: "APPROVED",
@@ -368,9 +383,50 @@ const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
       if (lqs.length === 0) {
         throw httpError(
           statusCodes.BAD_REQUEST,
-          "No approved Lead Qualifiers with assigned managers available"
+          "No approved Lead Qualifiers with assigned managers available",
         );
       }
+
+      const verifiedEmailCount = await Lead.countDocuments({
+        stage: "Verifier",
+        v_claimedBy: verifierId,
+      }).session(session);
+
+      const phoneOnlyCount = await Lead.countDocuments({
+        stage: "Verifier",
+        $or: [
+          { emails: { $exists: false } },
+          { "emails.0": { $exists: false } },
+        ],
+      }).session(session);
+
+      const availableLeadsCount = verifiedEmailCount + phoneOnlyCount;
+
+      if (availableLeadsCount === 0) {
+        await session.commitTransaction();
+        session.endSession();
+
+        return res.status(statusCodes.OK).json({
+          success: true,
+          message: "No leads found to move to LQ.",
+          requestedMoveCount,
+          availableLeadsCount,
+          movedCount: 0,
+        });
+      }
+
+      // Business validation
+      if (requestedMoveCount > availableLeadsCount) {
+        throw httpError(
+          statusCodes.BAD_REQUEST,
+          `Only ${availableLeadsCount} leads are available in Verifier stage.`,
+        );
+      }
+
+      const verifiedEmailLimit = Math.min(
+        requestedMoveCount,
+        verifiedEmailCount,
+      );
 
       const verifiedEmailLeads = await Lead.find({
         stage: "Verifier",
@@ -378,54 +434,51 @@ const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
       })
         .select("_id")
         .sort({ _id: 1 })
+        .limit(verifiedEmailLimit)
         .session(session);
 
-      const phoneOnlyVerifierLeads = await Lead.find({
-        stage: "Verifier",
-        $or: [
-          { emails: { $exists: false } },
-          { "emails.0": { $exists: false } },
-        ],
-      })
-        .select("_id")
-        .sort({ _id: 1 })
-        .session(session);
+      const remainingNeeded = requestedMoveCount - verifiedEmailLeads.length;
 
-      const leads = [...verifiedEmailLeads, ...phoneOnlyVerifierLeads];
+      let phoneOnlyVerifierLeads = [];
 
-      if (leads.length === 0) {
-        await session.commitTransaction();
-        session.endSession();
-
-        return res.status(statusCodes.OK).json({
-          success: true,
-          message: "No leads found to move to LQ.",
-          count: 0,
-        });
+      if (remainingNeeded > 0) {
+        phoneOnlyVerifierLeads = await Lead.find({
+          stage: "Verifier",
+          $or: [
+            { emails: { $exists: false } },
+            { "emails.0": { $exists: false } },
+          ],
+        })
+          .select("_id")
+          .sort({ _id: 1 })
+          .limit(remainingNeeded)
+          .session(session);
       }
 
-      if (leads.length > MAX_MOVE_TO_LQ) {
+      const leadsToMove = [...verifiedEmailLeads, ...phoneOnlyVerifierLeads];
+
+      if (leadsToMove.length !== requestedMoveCount) {
         throw httpError(
-          statusCodes.BAD_REQUEST,
-          `Cannot move more than ${MAX_MOVE_TO_LQ} leads to LQ at a time. Current count: ${leads.length}.`
+          statusCodes.CONFLICT,
+          `Could only prepare ${leadsToMove.length} leads. Please try again.`,
         );
       }
 
       const counter = await Counter.findOneAndUpdate(
         { key: "LQ_ASSIGN" },
-        { $inc: { seq: leads.length } },
+        { $inc: { seq: leadsToMove.length } },
         {
           new: true,
           upsert: true,
           session,
           setDefaultsOnInsert: true,
-        }
+        },
       );
 
-      const startSeq = counter.seq - leads.length;
+      const startSeq = counter.seq - leadsToMove.length;
       const now = new Date();
 
-      const bulkOps = leads.map((lead, index) => {
+      const bulkOps = leadsToMove.map((lead, index) => {
         const lqIndex = (startSeq + index) % lqs.length;
         const assignedLqId = lqs[lqIndex]._id;
 
@@ -474,7 +527,7 @@ const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
             ? result.nModified
             : 0;
 
-      if (movedCount === 0 && leads.length > 0) {
+      if (movedCount === 0) {
         await session.commitTransaction();
         session.endSession();
 
@@ -482,22 +535,30 @@ const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
           success: true,
           message:
             "No leads were moved. They may have already been moved by another request.",
-          count: 0,
+          requestedMoveCount,
+          movedCount: 0,
         });
       }
 
       await session.commitTransaction();
       session.endSession();
 
+      const remainingInVerifierStage = await Lead.countDocuments({
+        stage: "Verifier",
+      });
+
       return res.status(statusCodes.OK).json({
         success: true,
         message: `${movedCount} leads successfully distributed to LQ.`,
-        count: movedCount,
+        requestedMoveCount,
+        availableLeadsCount,
+        movedCount,
+        remainingInVerifierStage,
       });
     } catch (error) {
       try {
         await session.abortTransaction();
-      } catch (abortError) {}
+      } catch {}
 
       session.endSession();
 
@@ -520,13 +581,39 @@ const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
   return next(
     httpError(
       statusCodes.CONFLICT,
-      "Unable to move leads at this time. Please try again."
-    )
+      "Unable to move leads at this time. Please try again.",
+    ),
   );
 });
+// GET /api/verifier/leads/verifier-count
+// Returns counts for leads in Verifier stage
+const getVerifierStageCount = asyncHandler(async function (req, res, next) {
+  const verifierId = req.user.id;
 
+  const [totalVerifierStageLeads, myMovableVerifierLeads] = await Promise.all([
+    Lead.countDocuments({
+      stage: "Verifier",
+    }),
+
+    Lead.countDocuments({
+      stage: "Verifier",
+      $or: [
+        { v_claimedBy: verifierId },
+        { emails: { $exists: false } },
+        { "emails.0": { $exists: false } },
+      ],
+    }),
+  ]);
+
+  return res.status(statusCodes.OK).json({
+    success: true,
+    totalVerifierStageLeads,
+    myMovableVerifierLeads,
+  });
+});
 module.exports = {
   getDmLeads,
   updateEmailStatuses,
   moveAllVerifierLeadsToLQ,
+  getVerifierStageCount,
 };

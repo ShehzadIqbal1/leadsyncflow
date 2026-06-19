@@ -5,6 +5,14 @@ const requireAuth = require("../middlewares/requireAuth");
 const requireRole = require("../middlewares/requireRole");
 const verifierController = require("../controllers/verifierController");
 
+
+
+router.get(
+  "/leads/verifier-count",
+  requireAuth,
+  requireRole(["Verifier", "Admin", "Super Admin"]),
+  verifierController.getVerifierStageCount,
+);
 // GET claimed DM batch for current verifier
 // - returns existing claimed batch if present
 // - otherwise claims a new batch automatically
