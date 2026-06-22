@@ -387,18 +387,27 @@ const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
         );
       }
 
-      const verifiedEmailCount = await Lead.countDocuments({
+      const verifiedEmailQuery = {
         stage: "Verifier",
         v_claimedBy: verifierId,
-      }).session(session);
+        "emails.0": { $exists: true },
+      };
 
-      const phoneOnlyCount = await Lead.countDocuments({
+      const phoneOnlyQuery = {
         stage: "Verifier",
         $or: [
           { emails: { $exists: false } },
           { "emails.0": { $exists: false } },
         ],
-      }).session(session);
+      };
+
+      const verifiedEmailCount = await Lead.countDocuments(
+        verifiedEmailQuery,
+      ).session(session);
+
+      const phoneOnlyCount = await Lead.countDocuments(phoneOnlyQuery).session(
+        session,
+      );
 
       const availableLeadsCount = verifiedEmailCount + phoneOnlyCount;
 
@@ -423,37 +432,55 @@ const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
         );
       }
 
-      const verifiedEmailLimit = Math.min(
-        requestedMoveCount,
-        verifiedEmailCount,
-      );
+      // --------------------------------------------------
+      // Balanced 50/50 lead selection logic
+      // --------------------------------------------------
+      // Example:
+      // requestedMoveCount = 50 => 25 email, 25 phone
+      // requestedMoveCount = 75 => 38 email, 37 phone
+      // If one side has shortage, shortage is taken from the other side.
+      let emailTarget = Math.ceil(requestedMoveCount / 2);
+      let phoneTarget = requestedMoveCount - emailTarget;
 
-      const verifiedEmailLeads = await Lead.find({
-        stage: "Verifier",
-        v_claimedBy: verifierId,
-      })
-        .select("_id")
-        .sort({ _id: 1 })
-        .limit(verifiedEmailLimit)
-        .session(session);
-
-      const remainingNeeded = requestedMoveCount - verifiedEmailLeads.length;
-
-      let phoneOnlyVerifierLeads = [];
-
-      if (remainingNeeded > 0) {
-        phoneOnlyVerifierLeads = await Lead.find({
-          stage: "Verifier",
-          $or: [
-            { emails: { $exists: false } },
-            { "emails.0": { $exists: false } },
-          ],
-        })
-          .select("_id")
-          .sort({ _id: 1 })
-          .limit(remainingNeeded)
-          .session(session);
+      if (verifiedEmailCount < emailTarget) {
+        const shortage = emailTarget - verifiedEmailCount;
+        emailTarget = verifiedEmailCount;
+        phoneTarget += shortage;
       }
+
+      if (phoneOnlyCount < phoneTarget) {
+        const shortage = phoneTarget - phoneOnlyCount;
+        phoneTarget = phoneOnlyCount;
+        emailTarget += shortage;
+      }
+
+      emailTarget = Math.min(emailTarget, verifiedEmailCount);
+      phoneTarget = Math.min(phoneTarget, phoneOnlyCount);
+
+      if (emailTarget + phoneTarget !== requestedMoveCount) {
+        throw httpError(
+          statusCodes.CONFLICT,
+          `Could only prepare ${emailTarget + phoneTarget} leads. Please try again.`,
+        );
+      }
+
+      const verifiedEmailLeads =
+        emailTarget > 0
+          ? await Lead.find(verifiedEmailQuery)
+              .select("_id")
+              .sort({ _id: 1 })
+              .limit(emailTarget)
+              .session(session)
+          : [];
+
+      const phoneOnlyVerifierLeads =
+        phoneTarget > 0
+          ? await Lead.find(phoneOnlyQuery)
+              .select("_id")
+              .sort({ _id: 1 })
+              .limit(phoneTarget)
+              .session(session)
+          : [];
 
       const leadsToMove = [...verifiedEmailLeads, ...phoneOnlyVerifierLeads];
 
@@ -588,27 +615,15 @@ const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
 // GET /api/verifier/leads/verifier-count
 // Returns counts for leads in Verifier stage
 const getVerifierStageCount = asyncHandler(async function (req, res, next) {
-  const verifierId = req.user.id;
-
-  const [totalVerifierStageLeads, myMovableVerifierLeads] = await Promise.all([
+  const [totalVerifierStageLeads] = await Promise.all([
     Lead.countDocuments({
       stage: "Verifier",
-    }),
-
-    Lead.countDocuments({
-      stage: "Verifier",
-      $or: [
-        { v_claimedBy: verifierId },
-        { emails: { $exists: false } },
-        { "emails.0": { $exists: false } },
-      ],
     }),
   ]);
 
   return res.status(statusCodes.OK).json({
     success: true,
     totalVerifierStageLeads,
-    myMovableVerifierLeads,
   });
 });
 module.exports = {
