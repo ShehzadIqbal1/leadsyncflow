@@ -389,7 +389,7 @@ const moveAllVerifierLeadsToLQ = asyncHandler(async function (req, res, next) {
 
       const verifiedEmailQuery = {
         stage: "Verifier",
-        v_claimedBy: verifierId,
+        //v_claimedBy: verifierId,
         "emails.0": { $exists: true },
       };
 
