@@ -20,6 +20,9 @@ function isValidLqStatus(s) {
 
 // ---------------------------------------------
 // GET /api/lq/leads
+// Shows:
+// 1) Active LQ leads assigned to this LQ
+// 2) Manager-stage leads submitted by this LQ that are not PAID yet
 // ---------------------------------------------
 const getMyLeads = asyncHandler(async function (req, res, next) {
   let limit = parseInt(req.query.limit || "20", 10);
@@ -32,6 +35,7 @@ const getMyLeads = asyncHandler(async function (req, res, next) {
   const lqStatus = String(req.query.lqStatus || "")
     .trim()
     .toUpperCase();
+
   const allowed = ["PENDING", "REACHED", "DEAD", "QUALIFIED", "ALL", ""];
   if (!allowed.includes(lqStatus)) {
     return next(httpError(statusCodes.BAD_REQUEST, "Invalid lqStatus filter"));
@@ -40,6 +44,7 @@ const getMyLeads = asyncHandler(async function (req, res, next) {
   const today = String(req.query.today || "")
     .trim()
     .toLowerCase();
+
   const from = String(req.query.from || "").trim();
   const to = String(req.query.to || "").trim();
 
@@ -52,9 +57,20 @@ const getMyLeads = asyncHandler(async function (req, res, next) {
     );
   }
 
+  const userId = req.user.id;
+
   const baseQuery = {
-    stage: "LQ",
-    assignedTo: req.user.id,
+    $or: [
+      {
+        stage: "LQ",
+        assignedTo: userId,
+      },
+      {
+        stage: "MANAGER",
+        lqUpdatedBy: userId,
+        status: { $ne: "PAID" },
+      },
+    ],
   };
 
   if (dateFilter) {
@@ -62,20 +78,24 @@ const getMyLeads = asyncHandler(async function (req, res, next) {
   }
 
   const listQuery = { ...baseQuery };
+
   if (lqStatus && lqStatus !== "ALL") {
     listQuery.lqStatus = lqStatus;
   }
 
   const projection =
-    "name location emails phones sources stage status lqStatus comments submittedDate submittedTime assignedAt createdAt";
+    "name location emails phones sources stage status lqStatus comments submittedDate submittedTime assignedAt createdAt updatedAt assignedTo assignedToRole responseSource lqUpdatedAt lqUpdatedBy";
 
   const current_page = Math.floor(skip / limit) + 1;
+
   const [leads, total_records, countsAgg] = await Promise.all([
     Lead.find(listQuery)
-      .sort({ assignedAt: -1 })
+      .sort({ assignedAt: -1, createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .select(projection)
+      .populate("assignedTo", "name email role")
+      .populate("lqUpdatedBy", "name email role")
       .lean(),
 
     Lead.countDocuments(listQuery),
@@ -101,6 +121,7 @@ const getMyLeads = asyncHandler(async function (req, res, next) {
 
   countsAgg.forEach((row) => {
     const key = String(row._id || "").toUpperCase();
+
     if (counts_by_status[key] !== undefined) {
       counts_by_status[key] = row.count;
       counts_by_status.ALL += row.count;
@@ -110,7 +131,7 @@ const getMyLeads = asyncHandler(async function (req, res, next) {
   return res.status(statusCodes.OK).json({
     success: true,
     message:
-      "Lead Qualifier leads including the metadata for pagination and status counts",
+      "Lead Qualifier leads including active LQ leads and unpaid Manager-stage leads",
     metadata: {
       total_records,
       current_page,
@@ -122,21 +143,20 @@ const getMyLeads = asyncHandler(async function (req, res, next) {
   });
 });
 
+// ---------------------------------------------
 // PATCH /api/lq/leads/status
 // body: { leadIds: "id1" } OR { leadIds: ["id1", "id2"] }
+// Strictly locked to stage: "LQ"
 // ---------------------------------------------
 const updateLqStatus = asyncHandler(async function (req, res, next) {
   const { leadIds: rawIds, lqStatus: rawStatus } = req.body;
 
-  // 1. Normalize leadIds to always be an array
-  // If it's a string, wrap it: ["id1"]. If it's already an array, keep it.
   const leadIds = Array.isArray(rawIds) ? rawIds : [rawIds].filter(Boolean);
 
   const lqStatus = String(rawStatus || "")
     .trim()
     .toUpperCase();
 
-  // 2. Validation
   if (leadIds.length === 0) {
     return next(
       httpError(statusCodes.BAD_REQUEST, "No valid leadId(s) provided"),
@@ -147,7 +167,6 @@ const updateLqStatus = asyncHandler(async function (req, res, next) {
     return next(httpError(statusCodes.BAD_REQUEST, "Invalid lqStatus"));
   }
 
-  // 3. Database Operation (Works for 1 or 100 IDs)
   const result = await Lead.updateMany(
     {
       _id: { $in: leadIds },
@@ -163,7 +182,6 @@ const updateLqStatus = asyncHandler(async function (req, res, next) {
     },
   );
 
-  // 4. Smart Response
   if (result.matchedCount === 0) {
     return next(
       httpError(
@@ -180,9 +198,12 @@ const updateLqStatus = asyncHandler(async function (req, res, next) {
     lqStatus: lqStatus,
   });
 });
+
 // ---------------------------------------------
 // POST /api/lq/leads/:leadId/comment
-// body: { text }
+// Allows comment on:
+// 1) Active LQ leads assigned to this LQ
+// 2) Manager-stage leads submitted by this LQ while status is not PAID
 // ---------------------------------------------
 const addComment = asyncHandler(async function (req, res, next) {
   const leadId = req.params.leadId;
@@ -202,13 +223,25 @@ const addComment = asyncHandler(async function (req, res, next) {
 
   const lead = await Lead.findOne({
     _id: leadId,
-    stage: "LQ",
-    assignedTo: req.user.id,
+    $or: [
+      {
+        stage: "LQ",
+        assignedTo: req.user.id,
+      },
+      {
+        stage: "MANAGER",
+        lqUpdatedBy: req.user.id,
+        status: { $ne: "PAID" },
+      },
+    ],
   });
 
   if (!lead) {
     return next(
-      httpError(statusCodes.NOT_FOUND, "Lead not found / not assigned to you"),
+      httpError(
+        statusCodes.NOT_FOUND,
+        "Lead not found, already paid, or not accessible to you",
+      ),
     );
   }
 
@@ -223,8 +256,13 @@ const addComment = asyncHandler(async function (req, res, next) {
     createdTime: pkt.pktTime,
   });
 
-  lead.lqUpdatedAt = pkt.now;
-  lead.lqUpdatedBy = req.user.id;
+  // Keep existing behavior for active LQ leads.
+  // Do not change lqUpdatedAt for Manager-stage comments,
+  // because lqUpdatedAt represents LQ status/submission timing.
+  if (lead.stage === "LQ") {
+    lead.lqUpdatedAt = pkt.now;
+    lead.lqUpdatedBy = req.user.id;
+  }
 
   await lead.save();
 
@@ -235,7 +273,10 @@ const addComment = asyncHandler(async function (req, res, next) {
   });
 });
 
-// submit qualified lead to manager (multi-contact, keep original lead contacts)
+// ---------------------------------------------
+// POST /api/lq/leads/:leadId/submit-to-manager
+// Strictly locked to stage: "LQ"
+// ---------------------------------------------
 const submitToMyManager = asyncHandler(async function (req, res, next) {
   const leadId = req.params.leadId;
 
@@ -243,15 +284,14 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
     return next(httpError(statusCodes.BAD_REQUEST, "Invalid leadId"));
   }
 
-  // 0) Read inputs
   let selectedEmails = Array.isArray(req.body && req.body.selectedEmails)
     ? req.body.selectedEmails
     : [];
+
   let selectedPhones = Array.isArray(req.body && req.body.selectedPhones)
     ? req.body.selectedPhones
     : [];
 
-  // normalize/clean inputs + dedupe
   selectedEmails = [
     ...new Set(
       selectedEmails
@@ -270,7 +310,6 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
     ),
   ];
 
-  // Mandatory validation: at least one email OR one phone
   if (!selectedEmails.length && !selectedPhones.length) {
     return next(
       httpError(
@@ -280,7 +319,6 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
     );
   }
 
-  // 1) Find this LQ user + their manager mapping
   const lqUser = await User.findById(req.user.id).select(
     "reportsTo role status",
   );
@@ -298,7 +336,6 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
     );
   }
 
-  // 2) Verify manager exists + approved
   const manager = await User.findOne({
     _id: lqUser.reportsTo,
     role: "Manager",
@@ -314,7 +351,6 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
     );
   }
 
-  // 3) Fetch lead
   const lead = await Lead.findOne({
     _id: leadId,
     stage: "LQ",
@@ -329,7 +365,6 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
     );
   }
 
-  // 4) Must be qualified before moving
   if (String(lead.lqStatus || "").toUpperCase() !== "QUALIFIED") {
     return next(
       httpError(
@@ -339,9 +374,6 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
     );
   }
 
-  // ---------------------------------------------
-  // 5) Validate / collect selected Emails
-  // ---------------------------------------------
   const existingEmails = Array.isArray(lead.emails) ? lead.emails : [];
   const existingEmailMap = new Map();
 
@@ -372,9 +404,6 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
     selectedEmailPicks.push(matchedEmail);
   }
 
-  // ---------------------------------------------
-  // 6) Validate / collect selected Phones
-  // ---------------------------------------------
   const existingPhones = Array.isArray(lead.phones) ? lead.phones : [];
   const existingPhonesNorm = Array.isArray(lead.phonesNormalized)
     ? lead.phonesNormalized
@@ -416,9 +445,6 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
     selectedPhonePicks.push(matchedPhone);
   }
 
-  // ---------------------------------------------
-  // 7) Final validation
-  // ---------------------------------------------
   if (!selectedEmailPicks.length && !selectedPhonePicks.length) {
     return next(
       httpError(
@@ -428,9 +454,6 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
     );
   }
 
-  // ---------------------------------------------
-  // 8) Build responseSource with ALL selected picks
-  // ---------------------------------------------
   const pkt = getPktDateTime();
 
   const responseSource = {
@@ -454,21 +477,13 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
     })),
   };
 
-  // ---------------------------------------------
-  // 9) DO NOT overwrite original lead contacts
-  // Only store selected picks in responseSource
-  // ---------------------------------------------
   lead.responseSource = responseSource;
 
-  // ---------------------------------------------
-  // 10) Move lead to manager
-  // ---------------------------------------------
   lead.stage = "MANAGER";
   lead.assignedTo = manager._id;
   lead.assignedToRole = "Manager";
   lead.assignedAt = pkt.now;
 
-  // keep LQ update metadata
   lead.lqUpdatedAt = pkt.now;
   lead.lqUpdatedBy = req.user.id;
 
@@ -489,12 +504,15 @@ const submitToMyManager = asyncHandler(async function (req, res, next) {
 
 // ---------------------------------------------
 // GET /api/lq/stats
-// PERFORMANCE-BASED STATS
+// Visibility-based stats:
+// active LQ leads + unpaid Manager-stage leads submitted by this LQ
+// No double-counting because one lead can only be in one stage at a time.
 // ---------------------------------------------
 const getMyStats = asyncHandler(async function (req, res, next) {
   const today = String(req.query.today || "")
     .trim()
     .toLowerCase();
+
   const from = String(req.query.from || "").trim();
   const to = String(req.query.to || "").trim();
 
@@ -507,35 +525,77 @@ const getMyStats = asyncHandler(async function (req, res, next) {
 
   const userId = new mongoose.Types.ObjectId(req.user.id);
 
+  const matchQuery = {
+    $or: [
+      {
+        assignedTo: userId,
+        stage: "LQ",
+      },
+      {
+        lqUpdatedBy: userId,
+        stage: "MANAGER",
+        status: { $ne: "PAID" },
+      },
+    ],
+  };
+
+  if (range) {
+    matchQuery.assignedAt = range;
+  }
+
   const pipeline = [
     {
-      $match: {
-        $or: [
-          { assignedTo: userId, stage: "LQ" },
-          { lqUpdatedBy: userId, lqStatus: "QUALIFIED" },
-        ],
-        ...(range ? { lqUpdatedAt: range } : {}),
-      },
+      $match: matchQuery,
     },
     {
       $group: {
         _id: null,
+
         totalReceived: { $sum: 1 },
 
+        activeLqLeads: {
+          $sum: {
+            $cond: [{ $eq: ["$stage", "LQ"] }, 1, 0],
+          },
+        },
+
+        submittedToManagerUnpaid: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ["$stage", "MANAGER"] },
+                  { $ne: ["$status", "PAID"] },
+                ],
+              },
+              1,
+              0,
+            ],
+          },
+        },
+
         pending: {
-          $sum: { $cond: [{ $eq: ["$lqStatus", "PENDING"] }, 1, 0] },
+          $sum: {
+            $cond: [{ $eq: ["$lqStatus", "PENDING"] }, 1, 0],
+          },
         },
 
         qualified: {
-          $sum: { $cond: [{ $eq: ["$lqStatus", "QUALIFIED"] }, 1, 0] },
+          $sum: {
+            $cond: [{ $eq: ["$lqStatus", "QUALIFIED"] }, 1, 0],
+          },
         },
 
         reached: {
-          $sum: { $cond: [{ $eq: ["$lqStatus", "REACHED"] }, 1, 0] },
+          $sum: {
+            $cond: [{ $eq: ["$lqStatus", "REACHED"] }, 1, 0],
+          },
         },
 
         dead: {
-          $sum: { $cond: [{ $eq: ["$lqStatus", "DEAD"] }, 1, 0] },
+          $sum: {
+            $cond: [{ $eq: ["$lqStatus", "DEAD"] }, 1, 0],
+          },
         },
       },
     },
@@ -546,6 +606,8 @@ const getMyStats = asyncHandler(async function (req, res, next) {
 
   const stats = result[0] || {
     totalReceived: 0,
+    activeLqLeads: 0,
+    submittedToManagerUnpaid: 0,
     pending: 0,
     qualified: 0,
     reached: 0,
@@ -554,7 +616,7 @@ const getMyStats = asyncHandler(async function (req, res, next) {
 
   return res.status(statusCodes.OK).json({
     success: true,
-    message: "Lead Qualifier performance stats",
+    message: "Lead Qualifier visibility stats",
     stats,
   });
 });
