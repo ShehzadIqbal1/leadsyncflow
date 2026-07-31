@@ -621,10 +621,142 @@ const getMyStats = asyncHandler(async function (req, res, next) {
   });
 });
 
+// ---------------------------------------------
+// GET /api/lq/leads/search?q=emailOrPhoneOrNameOrLocation
+// Search only current LQ's accessible leads
+//
+// Accessible means:
+// 1) stage: "LQ" and assignedTo current LQ
+// 2) stage: "MANAGER", submitted by current LQ, and not PAID yet
+// ---------------------------------------------
+const searchMyLeads = asyncHandler(async function (req, res, next) {
+  const q = String(req.query.q || "").trim();
+
+  let limit = parseInt(req.query.limit || "20", 10);
+  let skip = parseInt(req.query.skip || "0", 10);
+
+  if (!q) {
+    return next(httpError(statusCodes.BAD_REQUEST, "Search query is required"));
+  }
+
+  if (q.length < 2) {
+    return next(
+      httpError(
+        statusCodes.BAD_REQUEST,
+        "Search query must be at least 2 characters",
+      ),
+    );
+  }
+
+  if (isNaN(limit) || limit < 1) limit = 20;
+  if (limit > 100) limit = 100;
+  if (isNaN(skip) || skip < 0) skip = 0;
+
+  const userId = req.user.id;
+
+  const accessQuery = {
+    $or: [
+      {
+        stage: "LQ",
+        assignedTo: userId,
+      },
+      {
+        stage: "MANAGER",
+        lqUpdatedBy: userId,
+        status: { $ne: "PAID" },
+      },
+    ],
+  };
+
+  const searchConditions = [];
+
+  // -----------------------------
+  // Email search
+  // -----------------------------
+  const emailSearch = q.toLowerCase();
+
+  if (emailSearch.includes("@")) {
+    searchConditions.push({ "emails.normalized": emailSearch });
+    searchConditions.push({ "emails.value": emailSearch });
+    searchConditions.push({ "responseSource.emails.normalized": emailSearch });
+    searchConditions.push({ "responseSource.emails.value": emailSearch });
+  }
+
+  // -----------------------------
+  // Phone search
+  // -----------------------------
+  let phoneSearch = "";
+
+  if (normalize && typeof normalize.normalizePhone === "function") {
+    phoneSearch = normalize.normalizePhone(q);
+  } else {
+    phoneSearch = q.replace(/\D/g, "");
+  }
+
+  if (phoneSearch) {
+    searchConditions.push({ phonesNormalized: phoneSearch });
+    searchConditions.push({ phones: phoneSearch });
+    searchConditions.push({ "responseSource.phones.normalized": phoneSearch });
+    searchConditions.push({ "responseSource.phones.value": phoneSearch });
+  }
+
+  // -----------------------------
+  // Name/location partial search
+  // -----------------------------
+  const escapedQ = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  searchConditions.push({
+    name: { $regex: escapedQ, $options: "i" },
+  });
+
+  searchConditions.push({
+    location: { $regex: escapedQ, $options: "i" },
+  });
+
+  const finalQuery = {
+    $and: [
+      accessQuery,
+      {
+        $or: searchConditions,
+      },
+    ],
+  };
+
+  const projection =
+    "name location emails phones sources stage status lqStatus comments submittedDate submittedTime assignedAt createdAt updatedAt assignedTo assignedToRole responseSource lqUpdatedAt lqUpdatedBy";
+
+  const [leads, total_records] = await Promise.all([
+    Lead.find(finalQuery)
+      .sort({ assignedAt: -1, createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .select(projection)
+      .populate("assignedTo", "name email role")
+      .populate("lqUpdatedBy", "name email role")
+      .lean(),
+
+    Lead.countDocuments(finalQuery),
+  ]);
+
+  return res.status(statusCodes.OK).json({
+    success: true,
+    message: "LQ lead search results",
+    metadata: {
+      total_records,
+      current_page: Math.floor(skip / limit) + 1,
+      per_page: limit,
+      skip,
+      query: q,
+    },
+    leads,
+  });
+});
+
 module.exports = {
   getMyLeads,
   updateLqStatus,
   addComment,
   submitToMyManager,
   getMyStats,
+  searchMyLeads,
 };

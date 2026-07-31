@@ -43,6 +43,14 @@ router.get(
   requireAuth,
   requireRole(["Lead Qualifiers", "Admin", "Super Admin"]),
   lqController.getMyStats
-)
+);
+
+// Search LQ's own accessible leads
+router.get(
+  "/leads/search",
+  requireAuth,
+  requireRole(["Lead Qualifiers", "Admin", "Super Admin"]),
+  lqController.searchMyLeads
+);
 
 module.exports = router;
