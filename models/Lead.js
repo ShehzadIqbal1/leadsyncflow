@@ -70,6 +70,53 @@ const LeadSchema = new mongoose.Schema(
 
     stage: { type: String, default: "DM" },
     status: { type: String, default: "UNPAID" },
+    leadType: {
+      type: String,
+      enum: ["NORMAL", "RECURRING", null],
+      default: null, // Only assigned later by Admin
+    },
+
+    // --- Admin to Writer Processing Fields ---
+    adminAssignedDate: {
+      type: Date,
+      default: null,
+    },
+    adminProcessedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    adminProcessedAt: {
+      type: Date,
+      default: null,
+    },
+    writerVisible: {
+      type: Boolean,
+      default: false,
+    },
+    writerVisibleAt: {
+      type: Date,
+      default: null,
+    },
+    writerStatus: {
+      type: String,
+      enum: ["PENDING", "IN_PROGRESS", "DONE"],
+      default: "PENDING",
+    },
+    writerDoneBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    writerDoneAt: {
+      type: Date,
+      default: null,
+    },
+    lastNotificationSentAt: {
+      type: Date,
+      default: null,
+    },
+    // --- End of Writer Fields ---
 
     assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     assignedToRole: { type: String, default: "" },
@@ -144,5 +191,14 @@ LeadSchema.index({ assignedTo: 1, stage: 1, assignedAt: -1 });
 // new verifier claim indexes
 LeadSchema.index({ stage: 1, v_claimedBy: 1, _id: 1 });
 LeadSchema.index({ stage: 1, v_batchId: 1 });
+
+// new writer lifecycle index to support dashboard queries
+LeadSchema.index({
+  stage: 1,
+  status: 1,
+  leadType: 1,
+  writerVisible: 1,
+  writerStatus: 1,
+});
 
 module.exports = mongoose.model("Lead", LeadSchema);
