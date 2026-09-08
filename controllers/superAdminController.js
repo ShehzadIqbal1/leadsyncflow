@@ -671,6 +671,87 @@ const decideRejectionRequest = asyncHandler(async function (req, res, next) {
   });
 });
 
+
+const getAllUsers = asyncHandler(async (req, res) => {
+  const users = await User.find({})
+    .select(
+      "name email role department sex status profileImage createdAt"
+    )
+    .sort({ createdAt: -1 });
+
+  return res.status(statusCodes.OK).json({
+    success: true,
+    count: users.length,
+    users,
+  });
+});
+
+const blockUser = asyncHandler(async function (req, res, next) {
+  const userId = req.params.id;
+
+  if (!isValidObjectId(userId)) {
+    return next(
+      httpError(statusCodes.BAD_REQUEST, "Invalid user id")
+    );
+  }
+
+  const user = await User.findById(userId);
+
+  if (!user) {
+    return next(
+      httpError(statusCodes.NOT_FOUND, "User not found")
+    );
+  }
+
+  // Prevent blocking another super admin
+  if (user.role === "Super Admin") {
+    return next(
+      httpError(
+        statusCodes.BAD_REQUEST,
+        "Super Admin account cannot be blocked"
+      )
+    );
+  }
+
+  user.status = "BLOCKED";
+
+  await user.save();
+
+  return res.status(statusCodes.OK).json({
+    success: true,
+    message: "User account blocked successfully",
+  });
+});
+
+
+const unblockUser = asyncHandler(async function (req, res, next) {
+  const userId = req.params.id;
+
+  if (!isValidObjectId(userId)) {
+    return next(
+      httpError(statusCodes.BAD_REQUEST, "Invalid user id")
+    );
+  }
+
+  const user = await User.findById(userId);
+
+  if (!user) {
+    return next(
+      httpError(statusCodes.NOT_FOUND, "User not found")
+    );
+  }
+
+  user.status = "APPROVED";
+
+  await user.save();
+
+  return res.status(statusCodes.OK).json({
+    success: true,
+    message: "User account unblocked successfully",
+  });
+});
+
+
 // --- Final Export ---
 module.exports = {
   getOverview,
@@ -686,4 +767,7 @@ module.exports = {
   unassignLqs,
   getRejectionRequests,
   decideRejectionRequest,
+  getAllUsers,
+  blockUser,
+  unblockUser,
 };
