@@ -9,9 +9,6 @@ const constants = {
     "Quality Assurance",
     "Sales",
     "Writing",
-    "Youtube Automation",
-    "Lead Qualifiers",
-    "Medical Billing"
   ],
 
   roles: [
@@ -20,7 +17,8 @@ const constants = {
     "Manager",
     "Verifier",
     "Lead Qualifiers",
-    "Data Minors"
+    "Data Minors",
+    "Writer",
   ],
 
   userStatus: {

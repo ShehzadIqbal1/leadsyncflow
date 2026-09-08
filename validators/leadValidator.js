@@ -60,7 +60,7 @@ function validateDataMinorLead(body) {
     return { ok: false, message: "Phones max 10", fields: { phones: true } };
   }
 
-  // ✅ ONLY ONE source required
+  // ONLY ONE source required
   if (!Array.isArray(sources) || sources.length < 1) {
     return {
       ok: false,

@@ -21,8 +21,10 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.1.1",
     "multer": "^2.0.2",
+    "node-cron": "^4.6.0",
     "path": "^0.12.7",
     "resend": "^6.9.4",
+    "socket.io": "^4.8.3",
     "streamifier": "^0.1.1"
   },
   "devDependencies": {

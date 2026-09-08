@@ -121,4 +121,28 @@ router.patch(
   superAdminController.decideRejectionRequest
 );
 
+router.get(
+  "/users",
+  requireAuth,
+  requireRole(["Super Admin"]),
+  superAdminController.getAllUsers
+);
+
+router.patch(
+  "/users/:id/block",
+  requireAuth,
+  requireRole(["Super Admin"]),
+  superAdminController.blockUser
+);
+
+
+router.patch(
+  "/users/:id/unblock",
+  requireAuth,
+  requireRole(["Super Admin"]),
+  superAdminController.unblockUser
+);
+
+
+
 module.exports = router;
