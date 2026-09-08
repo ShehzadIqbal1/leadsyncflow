@@ -1,42 +1,46 @@
 const Notification = require("../models/Notification");
+const { emitToUser } = require("./socket");
 
-/**
- * This creates in-app notifications in MongoDB.
- *
- * Later, if you add real push notification service like:
- * - Firebase Cloud Messaging
- * - OneSignal
- * - Socket.IO
- *
- * you can plug it inside this same function.
- */
-async function sendPushNotificationToUsers(users, payload) {
-  if (!Array.isArray(users) || users.length === 0) {
-    return;
-  }
-
-  const notifications = users.map((user) => ({
+async function createAndPushNotification(user, payload) {
+  const notification = await Notification.create({
     user: user._id,
     title: payload.title,
     body: payload.body,
     type: payload.type,
     metadata: payload.metadata || {},
-    createdForRole: user.role || "",
-  }));
-
-  await Notification.insertMany(notifications);
-
-  console.log("Notifications created:", {
-    users: users.map((user) => ({
-      id: String(user._id),
-      name: user.name,
-      email: user.email,
-      role: user.role,
-    })),
-    payload,
   });
+
+  const socketPayload = {
+    _id: notification._id,
+    title: notification.title,
+    body: notification.body,
+    type: notification.type,
+    isRead: notification.isRead,
+    metadata: notification.metadata,
+    createdAt: notification.createdAt,
+  };
+
+  emitToUser(user._id, "notification:new", socketPayload);
+
+  return notification;
+}
+
+async function createAndPushNotifications(users, payload) {
+  if (!Array.isArray(users) || users.length === 0) {
+    return [];
+  }
+
+  const created = [];
+
+  for (const user of users) {
+    const notification = await createAndPushNotification(user, payload);
+    created.push(notification);
+  }
+
+  return created;
 }
 
 module.exports = {
-  sendPushNotificationToUsers,
+  createAndPushNotification,
+  createAndPushNotifications,
 };

@@ -2,24 +2,43 @@ const cron = require("node-cron");
 const Lead = require("../models/Lead");
 const MetaLead = require("../models/MetaLead");
 const User = require("../models/User");
-const { sendPushNotificationToUsers } = require("./notificationService");
+const { createAndPushNotifications } = require("./notificationService");
+
+function buildDueNormalWriterLeadFilter(now, next48Hours, twoHoursAgo) {
+  return {
+    stage: "WRITER",
+    status: "PAID",
+    leadType: "NORMAL",
+    writerVisible: true,
+    writerStatus: { $ne: "DONE" },
+    adminAssignedDate: {
+      $ne: null,
+      $gte: now,
+      $lte: next48Hours,
+    },
+    $or: [
+      { lastNotificationSentAt: null },
+      { lastNotificationSentAt: { $exists: false } },
+      { lastNotificationSentAt: { $lte: twoHoursAgo } },
+    ],
+  };
+}
 
 /**
- * Cron runs every 2 hours.
+ * Runs every 2 hours.
  *
- * It checks NORMAL paid leads from BOTH:
- * 1. Lead model
- * 2. MetaLead model
+ * Notification target:
+ * - Admin
+ * - Super Admin
+ * - Writer
  *
  * Notification condition:
- * - stage: WRITER
- * - status: PAID
- * - leadType: NORMAL
- * - writerVisible: true
- * - writerStatus is not DONE
- * - adminAssignedDate is within next 48 hours OR already overdue
- *
- * It keeps notifying every 2 hours until writerStatus becomes DONE.
+ * - Lead is in WRITER stage
+ * - Lead is PAID
+ * - Lead type is NORMAL
+ * - Writer can see it
+ * - Writer has not marked it DONE
+ * - Admin assigned date is within the next 48 hours
  */
 function startMetaLeadWriterNotificationCron() {
   cron.schedule("0 */2 * * *", async function () {
@@ -28,34 +47,19 @@ function startMetaLeadWriterNotificationCron() {
       const next48Hours = new Date(now.getTime() + 48 * 60 * 60 * 1000);
       const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
 
-      const dueNormalLeadFilter = {
-        stage: "WRITER",
-        status: "PAID",
-        leadType: "NORMAL",
-        writerVisible: true,
-        writerStatus: { $ne: "DONE" },
-        adminAssignedDate: {
-          $ne: null,
-          $lte: next48Hours,
-        },
-        $or: [
-          { lastNotificationSentAt: null },
-          { lastNotificationSentAt: { $exists: false } },
-          { lastNotificationSentAt: { $lte: twoHoursAgo } },
-        ],
-      };
+      const filter = buildDueNormalWriterLeadFilter(
+        now,
+        next48Hours,
+        twoHoursAgo,
+      );
 
       const [normalLeads, metaLeads] = await Promise.all([
-        Lead.find(dueNormalLeadFilter)
-          .select(
-            "_id name adminAssignedDate leadType writerStatus lastNotificationSentAt",
-          )
+        Lead.find(filter)
+          .select("_id name adminAssignedDate leadType writerStatus")
           .sort({ adminAssignedDate: 1 }),
 
-        MetaLead.find(dueNormalLeadFilter)
-          .select(
-            "_id fullName program school adminAssignedDate leadType writerStatus lastNotificationSentAt",
-          )
+        MetaLead.find(filter)
+          .select("_id fullName program school adminAssignedDate leadType writerStatus")
           .sort({ adminAssignedDate: 1 }),
       ]);
 
@@ -74,28 +78,27 @@ function startMetaLeadWriterNotificationCron() {
         return;
       }
 
-      const leadIds = normalLeads.map((lead) => String(lead._id));
+      const normalLeadIds = normalLeads.map((lead) => String(lead._id));
       const metaLeadIds = metaLeads.map((lead) => String(lead._id));
 
-      await sendPushNotificationToUsers(usersToNotify, {
-        title: "Normal Lead Due Reminder",
-        body: `${totalDueLeads} normal lead(s) are due within 48 hours or overdue.`,
-        type: "NORMAL_LEAD_DUE_REMINDER",
+      await createAndPushNotifications(usersToNotify, {
+        title: "Normal Lead Due Soon",
+        body: `${totalDueLeads} normal writer lead(s) are due within the next 48 hours.`,
+        type: "NORMAL_WRITER_LEAD_DUE_48H",
         metadata: {
           totalDueLeads,
           normalLeadCount: normalLeads.length,
           metaLeadCount: metaLeads.length,
-          leadIds,
+          normalLeadIds,
           metaLeadIds,
+          dueWindowStartsAt: now,
           dueWindowEndsAt: next48Hours,
         },
       });
 
       await Promise.all([
         Lead.updateMany(
-          {
-            _id: { $in: normalLeads.map((lead) => lead._id) },
-          },
+          { _id: { $in: normalLeads.map((lead) => lead._id) } },
           {
             $set: {
               lastNotificationSentAt: now,
@@ -104,9 +107,7 @@ function startMetaLeadWriterNotificationCron() {
         ),
 
         MetaLead.updateMany(
-          {
-            _id: { $in: metaLeads.map((lead) => lead._id) },
-          },
+          { _id: { $in: metaLeads.map((lead) => lead._id) } },
           {
             $set: {
               lastNotificationSentAt: now,
@@ -115,13 +116,13 @@ function startMetaLeadWriterNotificationCron() {
         ),
       ]);
 
-      console.log("Normal lead due reminder sent:", {
+      console.log("Normal writer lead due notification sent:", {
         totalDueLeads,
         normalLeadCount: normalLeads.length,
         metaLeadCount: metaLeads.length,
       });
     } catch (error) {
-      console.error("Normal lead due reminder cron failed:", error);
+      console.error("Normal writer lead notification cron failed:", error);
     }
   });
 }

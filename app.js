@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const http = require("http");
 
 const dns = require("node:dns");
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
@@ -17,20 +18,23 @@ const leadQualifierRoutes = require("./routes/leadQualifierRoutes");
 const managerRoutes = require("./routes/managerRoutes");
 const leadSearchRoutes = require("./routes/leadSearchRoutes");
 
-
-// New Meta Lead routes
 const adminRoutes = require("./routes/adminRoutes");
 const writerRoutes = require("./routes/writerRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
 
-// Bootstrap
 const bootstrapSuperAdmin = require("./scripts/bootstrapSuperAdmin");
 
-// Cron Scheduler
 const {
   startMetaLeadWriterNotificationCron,
 } = require("./utils/cronScheduler");
 
+const { initSocket } = require("./utils/socket");
+
 const app = express();
+const server = http.createServer(app);
+
+// Socket.IO
+initSocket(server);
 
 // Middlewares
 app.use(cors());
@@ -51,38 +55,35 @@ app.use("/api/lq", leadQualifierRoutes);
 app.use("/api/manager", managerRoutes);
 app.use("/api/leads/search", leadSearchRoutes);
 
-// New Meta Lead Routes
+// New Routes
 app.use("/api/admin", adminRoutes);
 app.use("/api/writer", writerRoutes);
+app.use("/api/notifications", notificationRoutes);
 
-// Error Handler - always after routes
+// Error Handler
 app.use(errorHandler);
 
 const port = process.env.PORT || 5000;
 
 async function startServer() {
   try {
-    // Connect to DB
     await connectDb();
     console.log("MongoDB connected successfully");
 
-    // Run bootstrap for super admin
     try {
       await bootstrapSuperAdmin();
     } catch (e) {
       console.log("Bootstrap error:", e.message);
     }
 
-    // Start cron jobs after DB connection
     try {
       startMetaLeadWriterNotificationCron();
-      console.log("MetaLead writer notification cron started");
+      console.log("Normal writer lead notification cron started");
     } catch (e) {
       console.log("Cron scheduler error:", e.message);
     }
 
-    // Start Express server
-    app.listen(port, function () {
+    server.listen(port, function () {
       console.log("Server running on port " + port);
     });
   } catch (error) {

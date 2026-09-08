@@ -36,11 +36,6 @@ const NotificationSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: {},
     },
-
-    createdForRole: {
-      type: String,
-      default: "",
-    },
   },
   { timestamps: true },
 );
