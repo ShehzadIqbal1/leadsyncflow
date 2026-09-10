@@ -6,6 +6,7 @@ const constants = {
     "IT",
     "Marketing&SEO",
     "RND",
+    "Lead Qualifiers",
     "Quality Assurance",
     "Sales",
     "Writing",
